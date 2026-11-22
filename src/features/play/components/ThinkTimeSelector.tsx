@@ -1,4 +1,4 @@
-import { Clock } from "lucide-react";
+import { Clock, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Input } from "@/components/ui/input";
@@ -58,11 +58,15 @@ export function ThinkTimeSelector({
           >
             <SelectTrigger
               aria-label="Время мышления бота"
-              className="h-8 w-[10.5rem] border-border bg-secondary/70 text-xs"
+              className="h-8 w-[12rem] border-border bg-secondary/70 text-xs"
             >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
+              <SelectItem value="auto">
+                <span className="font-mono">3–7 с</span>
+                <span className="ml-1.5 text-muted-foreground">· Адаптивный</span>
+              </SelectItem>
               {THINK_TIME_PRESETS.map((p) => (
                 <SelectItem key={p.id} value={p.id}>
                   <span className="font-mono">{p.label}</span>
@@ -105,6 +109,30 @@ export function ThinkTimeSelector({
 
   return (
     <div className="space-y-2.5">
+      <button
+        type="button"
+        role="radio"
+        aria-checked={thinkTime === "auto"}
+        onClick={() => onChange({ thinkTime: "auto" })}
+        className={cn(
+          "flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          thinkTime === "auto"
+            ? "border-primary/70 bg-primary/10 text-foreground"
+            : "border-border bg-secondary/60 text-foreground/85 hover:border-input hover:bg-accent",
+        )}
+      >
+        <span className="flex items-center gap-2">
+          <Sparkles className="size-4 shrink-0 text-primary" aria-hidden />
+          <span>
+            <span className="block text-xs font-medium">Адаптивный режим</span>
+            <span className="block text-[11px] text-muted-foreground">
+              Естественное время 3–7 с в зависимости от сложности позиции
+            </span>
+          </span>
+        </span>
+        <span className="shrink-0 font-mono text-xs font-medium text-primary">3–7 с</span>
+      </button>
+
       <div
         role="radiogroup"
         aria-label="Время мышления бота"

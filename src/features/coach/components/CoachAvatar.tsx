@@ -1,199 +1,106 @@
-import type { CSSProperties } from "react";
+import { useId } from "react";
 
 import { cn } from "@/lib/utils";
 
-export type CoachMood =
-  | "neutral"
-  | "thinking"
-  | "happy"
-  | "amazed"
-  | "pleased"
-  | "pensive"
-  | "concerned"
-  | "shocked"
-  | "celebrate"
-  | "calm";
-
-interface Face {
-  mouth: string;
-  /** Left / right eyebrow paths. */
-  browL: string;
-  browR: string;
-  /** Eye vertical scale (1 = open, small = squint/smile). */
-  eye: number;
-  /** Pupils offset (look direction). */
-  look: [number, number];
-  blush: boolean;
-  openMouth: boolean;
-}
-
-const FACES: Record<CoachMood, Face> = {
-  neutral: {
-    mouth: "M50 63 Q60 67 70 63",
-    browL: "M43 37 Q49 35 55 37",
-    browR: "M65 37 Q71 35 77 37",
-    eye: 1,
-    look: [0, 0],
-    blush: false,
-    openMouth: false,
-  },
-  thinking: {
-    mouth: "M52 65 Q60 63 68 62",
-    browL: "M43 38 Q49 37 55 38",
-    browR: "M65 34 Q71 31 77 34",
-    eye: 0.9,
-    look: [2.5, -2.5],
-    blush: false,
-    openMouth: false,
-  },
-  happy: {
-    mouth: "M47 60 Q60 74 73 60",
-    browL: "M43 35 Q49 32 55 35",
-    browR: "M65 35 Q71 32 77 35",
-    eye: 0.55,
-    look: [0, 0],
-    blush: true,
-    openMouth: false,
-  },
-  amazed: {
-    mouth: "M48 60 Q60 76 72 60",
-    browL: "M43 33 Q49 29 55 33",
-    browR: "M65 33 Q71 29 77 33",
-    eye: 1.15,
-    look: [0, 0],
-    blush: true,
-    openMouth: true,
-  },
-  pleased: {
-    mouth: "M50 62 Q60 69 70 62",
-    browL: "M43 36 Q49 34 55 36",
-    browR: "M65 36 Q71 34 77 36",
-    eye: 0.8,
-    look: [0, 0],
-    blush: false,
-    openMouth: false,
-  },
-  pensive: {
-    mouth: "M52 65 Q60 63 68 65",
-    browL: "M43 36 Q49 37 55 38",
-    browR: "M65 38 Q71 37 77 36",
-    eye: 0.85,
-    look: [-2, 1],
-    blush: false,
-    openMouth: false,
-  },
-  concerned: {
-    mouth: "M50 67 Q60 60 70 67",
-    browL: "M43 38 Q49 35 55 33",
-    browR: "M65 33 Q71 35 77 38",
-    eye: 0.95,
-    look: [0, 1],
-    blush: false,
-    openMouth: false,
-  },
-  shocked: {
-    mouth: "M54 66 Q60 58 66 66 Q60 74 54 66",
-    browL: "M43 32 Q49 28 55 31",
-    browR: "M65 31 Q71 28 77 32",
-    eye: 1.25,
-    look: [0, 0],
-    blush: false,
-    openMouth: true,
-  },
-  celebrate: {
-    mouth: "M46 59 Q60 78 74 59",
-    browL: "M43 33 Q49 29 55 33",
-    browR: "M65 33 Q71 29 77 33",
-    eye: 0.5,
-    look: [0, 0],
-    blush: true,
-    openMouth: true,
-  },
-  calm: {
-    mouth: "M52 63 Q60 67 68 63",
-    browL: "M43 37 Q49 36 55 37",
-    browR: "M65 37 Q71 36 77 37",
-    eye: 0.35,
-    look: [0, 1],
-    blush: false,
-    openMouth: false,
-  },
-};
-
-const CONFETTI = [
-  { x: 14, y: 30, r: -20, d: "0s" },
-  { x: 100, y: 24, r: 25, d: "0.15s" },
-  { x: 22, y: 12, r: 40, d: "0.3s" },
-  { x: 92, y: 8, r: -35, d: "0.1s" },
-  { x: 8, y: 56, r: 10, d: "0.4s" },
-  { x: 108, y: 52, r: -10, d: "0.25s" },
-];
+export type CoachMood = "idle" | "thinking" | "speaking" | "warning" | "success" | "critical";
 
 interface CoachAvatarProps {
   mood: CoachMood;
   className?: string;
-  /** Changes on every new reaction so the reaction animation replays. */
+  /** Changes on every new reaction so visual pulses replay cleanly. */
   reactionKey?: string | number;
 }
 
-/** The Chess Coach character: an ivory pawn with a face whose expression follows the game. */
+const STATE_ACCENT: Record<CoachMood, { ring: string; core: string; glow: string }> = {
+  idle: { ring: "#16C784", core: "#16C784", glow: "rgba(22, 199, 132, 0.22)" },
+  thinking: { ring: "#38BDF8", core: "#38BDF8", glow: "rgba(56, 189, 248, 0.28)" },
+  speaking: { ring: "#16C784", core: "#34D399", glow: "rgba(22, 199, 132, 0.42)" },
+  warning: { ring: "#F59E0B", core: "#F59E0B", glow: "rgba(245, 158, 11, 0.34)" },
+  success: { ring: "#16C784", core: "#22D3EE", glow: "rgba(22, 199, 132, 0.42)" },
+  critical: { ring: "#EF4444", core: "#EF4444", glow: "rgba(239, 68, 68, 0.38)" },
+};
+
+/**
+ * Animated ProChess AI Coach Avatar: abstract silver chess knight with
+ * geometric armor facets, emerald telemetry ring, and reactive voice waveform.
+ */
 export function CoachAvatar({ mood, className, reactionKey }: CoachAvatarProps) {
-  const face = FACES[mood];
-  const d = (path: string) => ({ d: `path("${path}")` }) as CSSProperties;
+  const uid = useId().replace(/:/g, "");
+  const palette = STATE_ACCENT[mood];
+
   return (
-    <div className={cn("coach-avatar relative", className)} data-mood={mood} aria-hidden>
+    <div
+      key={reactionKey}
+      className={cn("coach-ai relative grid place-items-center", className)}
+      data-state={mood}
+      aria-hidden
+    >
       <svg viewBox="0 0 120 120" className="size-full overflow-visible">
-        <ellipse cx="60" cy="114" rx="30" ry="4" className="coach-shadow" />
-        <g key={reactionKey} className="coach-body">
+        <defs>
+          <radialGradient id={`${uid}-aura`} cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor={palette.glow} />
+            <stop offset="100%" stopColor="transparent" />
+          </radialGradient>
+          <linearGradient id={`${uid}-knight`} x1="15%" y1="10%" x2="85%" y2="90%">
+            <stop offset="0%" stopColor="#F4F6F8" />
+            <stop offset="50%" stopColor="#C6CDD6" />
+            <stop offset="100%" stopColor="#4B5563" />
+          </linearGradient>
+          <linearGradient id={`${uid}-facet`} x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#94A3B8" />
+            <stop offset="100%" stopColor="#1E293B" />
+          </linearGradient>
+        </defs>
+
+        {/* Ambient AI halo */}
+        <circle cx="60" cy="60" r="56" fill={`url(#${uid}-aura)`} />
+
+        {/* Obsidian core housing */}
+        <circle cx="60" cy="60" r="46" fill="#0B0D10" stroke="#282E38" strokeWidth="1.5" />
+
+        {/* Rotating Telemetry Ring */}
+        <circle
+          cx="60"
+          cy="60"
+          r="50"
+          fill="none"
+          stroke={palette.ring}
+          strokeWidth="1.75"
+          strokeDasharray="18 8 6 8"
+          strokeOpacity={mood === "idle" ? 0.45 : 0.92}
+          className="coach-ai-ring"
+        />
+
+        {/* Abstract Silver Knight Profile */}
+        <g className="coach-ai-core" style={{ transformOrigin: "60px 60px" }}>
+          <path d="M39 91 L42 84 L78 84 L81 91 Z" fill={`url(#${uid}-knight)`} />
           <path
-            d="M34 112 C34 100 42 94 50 90 C46 86 45 82 47 79 L73 79 C75 82 74 86 70 90 C78 94 86 100 86 112 Z"
-            className="coach-robe"
+            d="M44 82 L47 59 C40 53 40 41 47 30 L52 19 L59 25 L66 18 L68 28 C76 33 81 42 79 52 L67 57 L59 52 L55 57 C66 62 71 72 69 82 Z"
+            fill={`url(#${uid}-knight)`}
           />
-          <rect x="42" y="76" width="36" height="7" rx="3.5" className="coach-collar" />
-          <g className="coach-head">
-            <circle cx="60" cy="48" r="30" className="coach-skin" />
-            <path d="M33 40 Q36 18 60 17 Q84 18 87 40 Q74 28 60 28 Q46 28 33 40 Z" className="coach-cap" />
-            <circle cx="60" cy="15" r="4" className="coach-collar" />
-            {face.blush && (
-              <>
-                <ellipse cx="42" cy="58" rx="5" ry="3" className="coach-blush" />
-                <ellipse cx="78" cy="58" rx="5" ry="3" className="coach-blush" />
-              </>
-            )}
-            <path d={face.browL} style={d(face.browL)} className="coach-brow" />
-            <path d={face.browR} style={d(face.browR)} className="coach-brow" />
-            <g className="coach-eyes">
-              {[49, 71].map((cx) => (
-                <g key={cx} style={{ transform: `scaleY(${face.eye})`, transformOrigin: `${cx}px 47px` }} className="coach-eye">
-                  <ellipse cx={cx} cy="47" rx="5" ry="6" className="coach-ink" />
-                  <circle cx={cx + 1.5 + face.look[0]} cy={45 + face.look[1]} r="1.7" className="coach-glint" />
-                </g>
-              ))}
-            </g>
-            <path d={face.mouth} style={d(face.mouth)} className={cn("coach-mouth", face.openMouth && "coach-mouth-open")} />
-          </g>
+          {/* Geometric Armor Facet */}
+          <polygon
+            points="52,27 65,33 58,47 47,43"
+            fill={`url(#${uid}-facet)`}
+            fillOpacity="0.65"
+          />
+          {/* Glowing Telemetry Crest & Eye */}
+          <path
+            d="M48 80 C50 67 47 55 45 43 C45 36 48 30 53 24"
+            fill="none"
+            stroke={palette.core}
+            strokeWidth="2.2"
+            strokeLinecap="round"
+          />
+          <polygon points="62,38 69,36 66,41" fill={palette.core} />
         </g>
-        {mood === "thinking" && (
-          <g className="coach-dots">
-            <circle cx="94" cy="20" r="3" />
-            <circle cx="102" cy="12" r="2.2" />
-            <circle cx="108" cy="5" r="1.6" />
-          </g>
-        )}
-        {(mood === "celebrate" || mood === "amazed") && (
-          <g key={`c-${reactionKey}`}>
-            {CONFETTI.map((c, i) => (
-              <rect
-                key={i}
-                x={c.x}
-                y={c.y}
-                width="5"
-                height="2.4"
-                rx="1"
-                className={cn("coach-confetti", i % 2 ? "coach-confetti-a" : "coach-confetti-b")}
-                style={{ transform: `rotate(${c.r}deg)`, transformOrigin: `${c.x}px ${c.y}px`, animationDelay: c.d }}
-              />
-            ))}
+
+        {/* Live Voice Equalizer Waveform when Speaking */}
+        {mood === "speaking" && (
+          <g className="coach-ai-wave" transform="translate(82, 74)">
+            <rect x="0" y="6" width="3" height="10" rx="1.5" fill={palette.core} />
+            <rect x="6" y="2" width="3" height="18" rx="1.5" fill={palette.core} />
+            <rect x="12" y="5" width="3" height="12" rx="1.5" fill={palette.core} />
           </g>
         )}
       </svg>

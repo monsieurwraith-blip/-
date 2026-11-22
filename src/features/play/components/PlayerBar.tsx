@@ -1,7 +1,11 @@
+import { Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
+
 import { PieceImage } from "@/components/chess/PieceImage";
 import { cn } from "@/lib/utils";
 import { formatClock } from "@/lib/chess/timeControls";
 import type { Color, PieceSymbol } from "@/lib/chess/types";
+import { formatSeconds } from "@/lib/engine/thinkTime";
 
 interface PlayerBarProps {
   color: Color;
@@ -13,6 +17,7 @@ interface PlayerBarProps {
   clock: { enabled: boolean; ms: number; running: boolean } | null;
   isTurn: boolean;
   thinking?: boolean;
+  thinkingStartedAt?: number | null;
 }
 
 export function PlayerBar({
@@ -24,9 +29,24 @@ export function PlayerBar({
   clock,
   isTurn,
   thinking,
+  thinkingStartedAt,
 }: PlayerBarProps) {
   const victim: Color = color === "w" ? "b" : "w";
   const low = clock?.enabled && clock.ms < 20_000;
+  const [elapsedMs, setElapsedMs] = useState(0);
+
+  useEffect(() => {
+    if (!thinking || !thinkingStartedAt) {
+      setElapsedMs(0);
+      return;
+    }
+    setElapsedMs(Math.max(0, Date.now() - thinkingStartedAt));
+    const id = setInterval(() => {
+      setElapsedMs(Math.max(0, Date.now() - thinkingStartedAt));
+    }, 100);
+    return () => clearInterval(id);
+  }, [thinking, thinkingStartedAt]);
+
   return (
     <div className="flex items-center gap-3 py-2.5">
       <div
@@ -45,9 +65,17 @@ export function PlayerBar({
         <div className="flex items-baseline gap-2">
           <span className="truncate text-sm font-medium">{name}</span>
           {thinking && (
-            <span className="flex items-center gap-1 text-xs text-primary" aria-live="polite">
-              <span className="size-1.5 animate-breathe rounded-full bg-primary" />
-              думает
+            <span
+              className="flex items-center gap-1.5 text-xs font-medium text-primary"
+              aria-live="polite"
+            >
+              <Loader2 className="size-3 shrink-0 animate-spin" aria-hidden />
+              <span>Бот думает…</span>
+              {thinkingStartedAt ? (
+                <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                  {formatSeconds(elapsedMs)}
+                </span>
+              ) : null}
             </span>
           )}
         </div>

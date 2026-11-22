@@ -37,7 +37,7 @@ export function CoachReportDialog({
   const report = useMemo(() => buildReport(records), [records]);
   const moments = useMemo(() => reviewMoments(records), [records]);
   const tone = outcome ? outcomeTone(outcome, playerColor) : null;
-  const avatarMood = tone === "win" ? "celebrate" : tone === "loss" ? "calm" : "neutral";
+  const avatarMood = tone === "win" ? "success" : tone === "loss" ? "critical" : "idle";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

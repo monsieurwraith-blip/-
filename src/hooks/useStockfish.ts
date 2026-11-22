@@ -90,43 +90,46 @@ export function useStockfish(): StockfishHandle {
     };
   }, [attempt]);
 
-  const search = useCallback(async ({ purpose: p, minDurationMs, ...request }: EngineSearchOptions) => {
-    const engine = engineRef.current;
-    if (!engine) throw new EngineError("destroyed", "Движок не запущен.");
-    pendingRef.current += 1;
-    if (movingTimer.current) clearTimeout(movingTimer.current);
-    const gen = stopGen.current;
-    const startedAt = Date.now();
-    setStatus("thinking");
-    setPurpose(p);
-    setInfo(null);
-    setTiming({ startedAt, budgetMs: Math.max(minDurationMs ?? 0, request.movetimeMs) });
-    try {
-      let result = await engine.search({ ...request, onInfo: setInfo });
-      const wait = (minDurationMs ?? 0) - (Date.now() - startedAt);
-      if (!result.cancelled && wait > 0) {
-        await new Promise((r) => setTimeout(r, wait));
-        if (stopGen.current !== gen) result = { ...result, cancelled: true };
-      }
-      pendingRef.current -= 1;
-      if (pendingRef.current === 0) {
-        if (!result.cancelled && result.bestMove && p === "move") {
-          setStatus("moving");
-          movingTimer.current = setTimeout(() => {
-            if (pendingRef.current === 0) setStatus((s) => (s === "moving" ? "ready" : s));
-          }, MOVING_DISPLAY_MS);
-        } else {
-          setStatus((s) => (s === "error" ? s : "ready"));
+  const search = useCallback(
+    async ({ purpose: p, minDurationMs, ...request }: EngineSearchOptions) => {
+      const engine = engineRef.current;
+      if (!engine) throw new EngineError("destroyed", "Движок не запущен.");
+      pendingRef.current += 1;
+      if (movingTimer.current) clearTimeout(movingTimer.current);
+      const gen = stopGen.current;
+      const startedAt = Date.now();
+      setStatus("thinking");
+      setPurpose(p);
+      setInfo(null);
+      setTiming({ startedAt, budgetMs: Math.max(minDurationMs ?? 0, request.movetimeMs) });
+      try {
+        let result = await engine.search({ ...request, onInfo: setInfo });
+        const wait = (minDurationMs ?? 0) - (Date.now() - startedAt);
+        if (!result.cancelled && wait > 0) {
+          await new Promise((r) => setTimeout(r, wait));
+          if (stopGen.current !== gen) result = { ...result, cancelled: true };
         }
-        setPurpose(null);
-        setTiming(null);
+        pendingRef.current -= 1;
+        if (pendingRef.current === 0) {
+          if (!result.cancelled && result.bestMove && p === "move") {
+            setStatus("moving");
+            movingTimer.current = setTimeout(() => {
+              if (pendingRef.current === 0) setStatus((s) => (s === "moving" ? "ready" : s));
+            }, MOVING_DISPLAY_MS);
+          } else {
+            setStatus((s) => (s === "error" ? s : "ready"));
+          }
+          setPurpose(null);
+          setTiming(null);
+        }
+        return result;
+      } catch (err) {
+        pendingRef.current = Math.max(0, pendingRef.current - 1);
+        throw err;
       }
-      return result;
-    } catch (err) {
-      pendingRef.current = Math.max(0, pendingRef.current - 1);
-      throw err;
-    }
-  }, []);
+    },
+    [],
+  );
 
   const stop = useCallback(() => {
     stopGen.current += 1;

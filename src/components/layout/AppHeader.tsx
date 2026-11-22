@@ -1,58 +1,160 @@
-import { Link } from "@tanstack/react-router";
-import { Settings } from "lucide-react";
+import { ArrowLeft, BarChart3, Palette, Settings, Swords, User } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { ProChessLogo } from "@/components/brand/ProChessLogo";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { useSettings } from "@/features/settings/SettingsProvider";
 import { SettingsSheet } from "@/features/settings/SettingsSheet";
+import { cn } from "@/lib/utils";
 
-/**
- * Top navigation. Only sections that actually exist are listed —
- * future sections (online, analysis, puzzles, stats) get added here as they ship.
- */
-const NAV_ITEMS = [{ to: "/", label: "Игра" }] as const;
+export type AppRouteView = "menu" | "game" | "analysis";
 
-export function AppHeader() {
-  const [settingsOpen, setSettingsOpen] = useState(false);
+interface AppHeaderProps {
+  activeView?: Exclude<AppRouteView, "menu">;
+  onNavigate?: (view: AppRouteView) => void;
+  onMainMenu?: () => void;
+  onOpenSettings?: () => void;
+  onOpenCustomization?: () => void;
+  confirmLeave?: boolean;
+}
 
-  // Ctrl/Cmd + , opens the settings, like in desktop apps.
+export function AppHeader({
+  activeView = "game",
+  onNavigate,
+  onMainMenu,
+  onOpenSettings,
+  onOpenCustomization,
+  confirmLeave = false,
+}: AppHeaderProps) {
+  const { settings, preview } = useSettings();
+  const [localSettingsOpen, setLocalSettingsOpen] = useState(false);
+  const [pendingTarget, setPendingTarget] = useState<AppRouteView | null>(null);
+
+  const openSettings = onOpenSettings ?? (() => setLocalSettingsOpen(true));
+
   useEffect(() => {
+    if (onOpenSettings) return;
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === ",") {
         e.preventDefault();
-        setSettingsOpen(true);
+        setLocalSettingsOpen(true);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [onOpenSettings]);
+
+  const navigate = (target: AppRouteView) => {
+    preview("menu");
+    if (confirmLeave) {
+      setPendingTarget(target);
+      return;
+    }
+    if (target === "menu" && onMainMenu) onMainMenu();
+    else onNavigate?.(target);
+  };
 
   return (
-    <header className="border-b border-border/70">
-      <div className="mx-auto flex h-14 w-full max-w-[1320px] items-center justify-between px-4 sm:px-6">
-        <Link
-          to="/"
-          className="flex items-center gap-2.5 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    <header className="border-b border-border/80 bg-background/70 backdrop-blur-md">
+      <div className="mx-auto flex h-14 w-full max-w-[1400px] items-center justify-between gap-3 px-4 sm:px-6">
+        <button
+          type="button"
+          onClick={() => navigate("menu")}
+          className="flex items-center gap-2.5 rounded-md text-left transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         >
-          <LogoMark />
-          <span className="text-[13px] font-semibold tracking-[0.32em]">CHESS STUDIO</span>
-        </Link>
-        <nav aria-label="Основная навигация" className="flex items-center gap-1">
-          {NAV_ITEMS.map((item) => (
-            <Link
-              key={item.to}
-              to={item.to}
-              className="rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              activeProps={{ className: "bg-secondary text-foreground" }}
-              activeOptions={{ exact: true }}
+          <ProChessLogo variant="icon" withWordmark />
+        </button>
+
+        <nav aria-label="Основная навигация" className="flex items-center gap-1 sm:gap-1.5">
+          {(onMainMenu || onNavigate) && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="gap-1.5 whitespace-nowrap text-muted-foreground hover:text-foreground"
+              onClick={() => navigate("menu")}
             >
-              {item.label}
-            </Link>
-          ))}
+              <ArrowLeft className="size-4" aria-hidden />
+              Главное меню
+            </Button>
+          )}
+
+          {onNavigate && (
+            <>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate("game")}
+                className={cn(
+                  "hidden gap-1.5 whitespace-nowrap sm:inline-flex",
+                  activeView === "game"
+                    ? "bg-primary/15 text-primary"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <Swords className="size-3.5" aria-hidden />
+                Арена
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate("analysis")}
+                className={cn(
+                  "hidden gap-1.5 whitespace-nowrap sm:inline-flex",
+                  activeView === "analysis"
+                    ? "bg-primary/15 text-primary"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <BarChart3 className="size-3.5" aria-hidden />
+                Анализ
+              </Button>
+            </>
+          )}
+
+          <div className="hidden items-center gap-1.5 px-2 text-xs text-muted-foreground md:flex">
+            <User className="size-3.5 text-primary" aria-hidden />
+            <span className="max-w-[8rem] truncate">{settings.playerName}</span>
+          </div>
+
+          {onOpenCustomization && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={() => {
+                preview("menu");
+                onOpenCustomization();
+              }}
+              aria-label="Темы и фигуры"
+              title="Кастомизация доски и фигур"
+            >
+              <Palette className="size-[17px]" />
+            </Button>
+          )}
+
           <Button
+            type="button"
             variant="ghost"
             size="icon"
-            className="ml-1 text-muted-foreground hover:text-foreground"
-            onClick={() => setSettingsOpen(true)}
+            className="text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              preview("menu");
+              openSettings();
+            }}
             aria-label="Настройки"
             title="Настройки (Ctrl + ,)"
           >
@@ -60,19 +162,40 @@ export function AppHeader() {
           </Button>
         </nav>
       </div>
-      <SettingsSheet open={settingsOpen} onOpenChange={setSettingsOpen} />
-    </header>
-  );
-}
 
-function LogoMark() {
-  return (
-    <svg viewBox="0 0 24 24" className="size-6" aria-hidden>
-      <rect x="1" y="1" width="22" height="22" rx="6" className="fill-secondary stroke-border" />
-      <rect x="6" y="6" width="6" height="6" rx="1" className="fill-ivory" />
-      <rect x="12" y="12" width="6" height="6" rx="1" className="fill-primary" />
-      <rect x="12" y="6" width="6" height="6" rx="1" className="fill-muted" />
-      <rect x="6" y="12" width="6" height="6" rx="1" className="fill-muted" />
-    </svg>
+      {!onOpenSettings && (
+        <SettingsSheet open={localSettingsOpen} onOpenChange={setLocalSettingsOpen} />
+      )}
+
+      {(onMainMenu || onNavigate) && (
+        <AlertDialog
+          open={pendingTarget !== null}
+          onOpenChange={(open) => !open && setPendingTarget(null)}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Покинуть текущую партию?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Текущая партия ещё не завершена и будет сброшена при переходе.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Остаться</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  const target = pendingTarget;
+                  setPendingTarget(null);
+                  if (!target) return;
+                  if (target === "menu" && onMainMenu) onMainMenu();
+                  else onNavigate?.(target);
+                }}
+              >
+                Перейти
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      )}
+    </header>
   );
 }

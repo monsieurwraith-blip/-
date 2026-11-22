@@ -44,8 +44,8 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
-app.setName("CHESS STUDIO");
-if (process.platform === "win32") app.setAppUserModelId("app.chessstudio.desktop");
+app.setName("ProChess");
+if (process.platform === "win32") app.setAppUserModelId("app.prochess.desktop");
 // Move/capture sounds must play from the first move.
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
 
@@ -128,15 +128,16 @@ function registerAppProtocol() {
 // ---------- Main window ----------
 function createWindow() {
   const state = readWindowState();
+  const iconPath = path.join(__dirname, "icon.png");
   const win = new BrowserWindow({
     ...state,
     minWidth: 900,
     minHeight: 640,
-    title: "CHESS STUDIO",
-    backgroundColor: "#171513",
+    title: "ProChess",
+    backgroundColor: "#0B0D10",
     show: false,
     autoHideMenuBar: true,
-    icon: path.join(__dirname, "icon.png"),
+    ...(fs.existsSync(iconPath) ? { icon: iconPath } : {}),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,

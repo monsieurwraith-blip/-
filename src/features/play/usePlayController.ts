@@ -1,3 +1,4 @@
+import { Chess, type Move } from "chess.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useChessClock } from "@/hooks/useChessClock";
@@ -8,29 +9,119 @@ import { analyzePlayerMove, type PendingAnalysis } from "@/features/coach/analys
 import type { ClockTimes } from "@/lib/chess/clock";
 import { engineMovetime, getDifficulty } from "@/lib/chess/difficulty";
 import { resolveTimeout } from "@/lib/chess/outcome";
+import type { BoardCell } from "@/lib/chess/pieceIds";
 import { getTimeControl } from "@/lib/chess/timeControls";
-import { opposite, type BoardMove, type Color } from "@/lib/chess/types";
-import { parseUciMove, toUciMove } from "@/lib/chess/uci";
+import {
+  opposite,
+  type BoardMove,
+  type Color,
+  type PromotionPiece,
+  type Square,
+  type SquarePair,
+} from "@/lib/chess/types";
+import { parseUciMove, toUciMove, type EngineInfo, type EngineScore } from "@/lib/chess/uci";
 import { pliesToUndo } from "@/lib/chess/undo";
-import { isMistakeClass } from "@/lib/coach/evaluation";
-import type { CoachRecord } from "@/lib/coach/report";
+import { chartPawns, isMistakeClass, povCp, toWhitePov } from "@/lib/coach/evaluation";
+import { buildLayeredHint, type HintLevel } from "@/lib/coach/hints";
+import type { CoachRecord, EvalPoint } from "@/lib/coach/report";
+import { playUci } from "@/lib/coach/tactics";
+import type { PlayStyleId } from "@/lib/settings/settings";
 import { thinkTimeMs } from "@/lib/engine/thinkTime";
+import { stopSpeaking } from "@/lib/sound/speech";
 
 import type { ActiveGame, GameSettings, HintMove } from "./types";
 
-const HINT_SEARCH = { skillLevel: 20, depth: 16, movetimeMs: 1000 } as const;
+const HINT_SEARCH = { skillLevel: 20, depth: 16, movetimeMs: 1000, multiPv: 2 } as const;
 
-/**
- * Coach flow for one player move:
- * idle → analyzing (engine reply waits) → idle, or → review (a mistake: the player
- * decides) → idle ("Продолжить") / fixing ("Исправить ход": move taken back).
- */
 export type CoachPhase = "idle" | "analyzing" | "review" | "fixing";
+
+interface RedoMoveEntry {
+  from: Square;
+  to: Square;
+  promotion?: PromotionPiece;
+  clockSnapshot?: ClockTimes;
+}
+
+export interface InspectedPosition {
+  ply: number;
+  fen: string;
+  cells: BoardCell[];
+  lastMove: SquarePair | null;
+  checkSquare: Square | null;
+}
+
+function chooseStyledCandidate(
+  fen: string,
+  bestMove: string,
+  lines: readonly EngineInfo[],
+  playStyle: PlayStyleId,
+  engineColor: Color,
+): string {
+  if (playStyle === "balanced" || lines.length < 2) return bestMove;
+  const pv1 = lines[0];
+  const pv2 = lines[1];
+  const uci2 = pv2?.pv[0];
+  if (!pv1?.score || !pv2?.score || !uci2) return bestMove;
+  const cp1 = povCp(toWhitePov(pv1.score, engineColor), engineColor);
+  const cp2 = povCp(toWhitePov(pv2.score, engineColor), engineColor);
+  // Only switch away from PV1 if PV2 is practically equal (within 15 cp) and matches style.
+  if (cp1 - cp2 > 15) return bestMove;
+
+  const board1 = new Chess(fen);
+  const m1 = playUci(board1, bestMove);
+  const board2 = new Chess(fen);
+  const m2 = playUci(board2, uci2);
+  if (!m1 || !m2) return bestMove;
+
+  const aggrScore = (m: Move) =>
+    (m.captured ? 3 : 0) +
+    (m.san.includes("+") ? 2 : 0) +
+    (m.piece === "q" || m.piece === "n" ? 1 : 0);
+  const solidScore = (m: Move) =>
+    (m.isKingsideCastle() || m.isQueensideCastle() ? 3 : 0) +
+    (!m.captured && (m.piece === "p" || m.piece === "b" || m.piece === "n") ? 1 : 0);
+
+  if (playStyle === "aggressive" && aggrScore(m2) > aggrScore(m1)) return uci2;
+  if (playStyle === "solid" && solidScore(m2) > solidScore(m1)) return uci2;
+  return bestMove;
+}
+
+function buildSnapshotAtPly(history: readonly Move[], targetPly: number): InspectedPosition {
+  const chess = new Chess();
+  let last: Move | null = null;
+  const count = Math.max(0, Math.min(history.length, targetPly));
+  for (let i = 0; i < count; i++) {
+    const m = history[i];
+    if (!m) break;
+    last = chess.move({
+      from: m.from,
+      to: m.to,
+      ...(m.promotion ? { promotion: m.promotion } : {}),
+    });
+  }
+  const inCheck = chess.inCheck();
+  const turn = chess.turn();
+  const cells: BoardCell[] = [];
+  let checkSquare: Square | null = null;
+  for (const row of chess.board()) {
+    for (const p of row) {
+      if (!p) continue;
+      cells.push({ square: p.square, type: p.type, color: p.color });
+      if (inCheck && p.type === "k" && p.color === turn) checkSquare = p.square;
+    }
+  }
+  return {
+    ply: count,
+    fen: chess.fen(),
+    cells,
+    lastMove: last ? { from: last.from, to: last.to } : null,
+    checkSquare,
+  };
+}
 
 /**
  * Orchestrates one game against Stockfish: rules (chess.js), clocks, the
- * engine worker and (in Chess Coach mode) the coach's analysis of every
- * player move. UI components only read state from here and call actions.
+ * engine worker, redo stack, history inspection, multi-level hints, and Coach mode.
  */
 export function usePlayController() {
   const game = useChessGame();
@@ -38,8 +129,8 @@ export function usePlayController() {
   const { settings: userSettings, update: updateUserSettings } = useSettings();
   const gameRef = useRef(game);
   gameRef.current = game;
-  const thinkMsRef = useRef(0);
-  thinkMsRef.current = thinkTimeMs(userSettings.engine.thinkTime, userSettings.engine.customSeconds);
+  const engineSettingsRef = useRef(userSettings.engine);
+  engineSettingsRef.current = userSettings.engine;
 
   const clock = useChessClock((flagged) => {
     const g = gameRef.current;
@@ -56,6 +147,16 @@ export function usePlayController() {
   const [pending, setPending] = useState<PendingAnalysis | null>(null);
   const [records, setRecords] = useState<CoachRecord[]>([]);
   const [coachError, setCoachError] = useState<string | null>(null);
+  const [redoStack, setRedoStack] = useState<RedoMoveEntry[][]>([]);
+  const [viewPly, setViewPly] = useState<number | null>(null);
+  const [liveEval, setLiveEval] = useState<{
+    score: EngineScore;
+    depth: number;
+    lines: EngineInfo[];
+    turn: Color;
+  } | null>(null);
+  const [evalHistory, setEvalHistory] = useState<EvalPoint[]>([]);
+
   const clockHistory = useRef<ClockTimes[]>([]);
   const gameCounter = useRef(0);
   const hintPendingRef = useRef(false);
@@ -66,15 +167,22 @@ export function usePlayController() {
   const coachBlocking = coachOn && (coachPhase === "analyzing" || coachPhase === "review");
   const uciMoves = useMemo(() => game.history.map((m) => toUciMove(m)), [game.history]);
 
-  // Keep the board facing the side chosen in the setup screen.
   useEffect(() => {
     if (!active) setOrientation(settings.side === "b" ? "b" : "w");
   }, [active, settings.side]);
+
+  const recordEvalPoint = useCallback((ply: number, whiteScore: EngineScore) => {
+    setEvalHistory((prev) => {
+      const filtered = prev.filter((pt) => pt.ply < ply);
+      return [...filtered, { ply, pawns: chartPawns(whiteScore) }];
+    });
+  }, []);
 
   const recordMove = useCallback(
     (color: Color) => {
       clockHistory.current.push(clock.press(color));
       setHint(null);
+      setViewPly(null);
     },
     [clock],
   );
@@ -89,15 +197,20 @@ export function usePlayController() {
   const startGame = useCallback(
     (next: GameSettings) => {
       const color: Color = next.side === "random" ? (Math.random() < 0.5 ? "w" : "b") : next.side;
-      // Coach games are untimed: analysis and decisions must not eat anyone's clock.
-      const started: GameSettings = next.mode === "coach" ? { ...next, timeControl: "untimed" } : next;
+      const started: GameSettings =
+        next.mode === "coach" ? { ...next, timeControl: "untimed" } : next;
       const tc = getTimeControl(started.timeControl);
+      stopSpeaking();
       engine.stop();
       game.reset();
       clock.reset(tc.initialMs, tc.incrementMs);
       clockHistory.current = [clock.read()];
       setHint(null);
       setEngineMoveError(null);
+      setRedoStack([]);
+      setViewPly(null);
+      setLiveEval(null);
+      setEvalHistory([]);
       resetCoach();
       setOrientation(color);
       gameCounter.current += 1;
@@ -112,12 +225,17 @@ export function usePlayController() {
   }, [active, startGame]);
 
   const backToSetup = useCallback(() => {
+    stopSpeaking();
     engine.stop();
     clock.pause();
     game.reset();
     setActive(null);
     setHint(null);
     setEngineMoveError(null);
+    setRedoStack([]);
+    setViewPly(null);
+    setLiveEval(null);
+    setEvalHistory([]);
     resetCoach();
     setOrientation(settings.side === "b" ? "b" : "w");
   }, [clock, engine, game, resetCoach, settings.side]);
@@ -129,17 +247,29 @@ export function usePlayController() {
 
   const playerMove = useCallback(
     (move: BoardMove): boolean => {
+      if (viewPly !== null && viewPly < gameRef.current.history.length) return false;
       const g = gameRef.current;
-      if (!active || g.isOver || g.turn !== active.playerColor || coachBlocking) return false;
+      const chess = g.chess();
+      if (
+        !active ||
+        g.isOver ||
+        chess.isGameOver() ||
+        g.turn !== active.playerColor ||
+        chess.turn() !== active.playerColor ||
+        coachBlocking
+      ) {
+        return false;
+      }
       if (hintPendingRef.current) engine.stop();
       const fenBefore = g.fen;
       const movesBefore = g.history.map((m) => toUciMove(m));
       const ply = g.history.length;
       const played = g.move(move);
       if (!played) return false;
+      setRedoStack([]);
       recordMove(played.color);
       if (active.settings.mode === "coach") {
-        const chess = g.chess();
+        const afterChess = g.chess();
         setCoachError(null);
         setPending({
           ply,
@@ -147,16 +277,16 @@ export function usePlayController() {
           movesBefore,
           move: played,
           playerColor: active.playerColor,
-          gameOverAfter: chess.isGameOver(),
+          gameOverAfter: afterChess.isGameOver(),
         });
         setCoachPhase("analyzing");
       }
       return true;
     },
-    [active, coachBlocking, engine, recordMove],
+    [active, coachBlocking, engine, recordMove, viewPly],
   );
 
-  // Engine's turn: request exactly one search per position. Cleanup cancels it.
+  // Engine's turn: request one search per position with user depthLimit and playStyle.
   useEffect(() => {
     if (!active || !engineColor || game.isOver || !engine.available || coachBlocking) return;
     if (game.turn !== engineColor) return;
@@ -164,15 +294,25 @@ export function usePlayController() {
     const level = getDifficulty(active.settings.difficulty);
     const tc = getTimeControl(active.settings.timeControl);
     const remaining = clock.enabled ? clock.read()[engineColor] : null;
-    const movetimeMs = engineMovetime(thinkMsRef.current, remaining, tc.incrementMs);
+    const es = engineSettingsRef.current;
+    const baseThinkMs = thinkTimeMs(es.thinkTime, es.customSeconds, game.fen);
+    const movetimeMs = engineMovetime(baseThinkMs, remaining, tc.incrementMs);
+    const depth =
+      es.depthLimit !== null
+        ? level.depth !== null
+          ? Math.min(level.depth, es.depthLimit)
+          : es.depthLimit
+        : level.depth;
+    const multiPv = es.playStyle !== "balanced" && level.skillLevel >= 12 ? 2 : 1;
+
     engine
       .search({
         purpose: "move",
         moves: uciMoves,
         skillLevel: level.skillLevel,
-        depth: level.depth,
+        depth,
         movetimeMs,
-        // Depth-capped levels finish early; still move only after the chosen time.
+        multiPv,
         minDurationMs: movetimeMs,
       })
       .then((result) => {
@@ -181,11 +321,28 @@ export function usePlayController() {
           setEngineMoveError("Движок не вернул ход для текущей позиции.");
           return;
         }
-        const parsed = parseUciMove(result.bestMove);
+        if (result.info?.score) {
+          const whiteScore = toWhitePov(result.info.score, engineColor);
+          setLiveEval({
+            score: whiteScore,
+            depth: result.info.depth,
+            lines: result.lines,
+            turn: engineColor,
+          });
+          recordEvalPoint(gameRef.current.history.length, whiteScore);
+        }
+        const chosenUci = chooseStyledCandidate(
+          gameRef.current.fen,
+          result.bestMove,
+          result.lines,
+          engineSettingsRef.current.playStyle,
+          engineColor,
+        );
+        const parsed = parseUciMove(chosenUci);
         const played = parsed ? gameRef.current.move(parsed) : null;
         if (!played) {
           setEngineMoveError(
-            `Движок вернул ход «${result.bestMove}», который нелегален в текущей позиции. Ход не применён.`,
+            `Движок вернул ход «${chosenUci}», который нелегален в текущей позиции. Ход не применён.`,
           );
           return;
         }
@@ -193,7 +350,7 @@ export function usePlayController() {
         recordMove(played.color);
       })
       .catch(() => {
-        // Fatal engine errors are reported through engine.error.
+        // Fatal errors surface via engine.error.
       });
     return () => {
       live = false;
@@ -202,7 +359,6 @@ export function usePlayController() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one search per (game, position)
   }, [active, engineColor, game.fen, game.isOver, game.turn, engine.available, coachBlocking]);
 
-  // Game over: freeze clocks, stop any calculation (the coach's last analysis restarts below).
   useEffect(() => {
     if (!game.isOver) return;
     clock.pause();
@@ -210,7 +366,6 @@ export function usePlayController() {
     setHint(null);
   }, [game.isOver, clock, engine]);
 
-  // Coach: analyse the player's move, then let the engine reply or ask the player.
   useEffect(() => {
     if (!pending || !engine.available || !active) return;
     let live = true;
@@ -227,6 +382,13 @@ export function usePlayController() {
           verdict,
           corrected: false,
         };
+        setLiveEval({
+          score: verdict.scoreAfter,
+          depth: 14,
+          lines: [],
+          turn: pending.playerColor === "w" ? "b" : "w",
+        });
+        recordEvalPoint(pending.ply, verdict.scoreAfter);
         setRecords((rs) => [...rs.filter((r) => r.corrected || r.ply < pending.ply), record]);
         setPending(null);
         const over = gameRef.current.isOver;
@@ -262,99 +424,160 @@ export function usePlayController() {
     outcomeType !== "resign";
 
   const takeBack = useCallback(
-    (plies: number) => {
-      if (!playerColor) return;
+    (plies: number, saveForRedo = false) => {
+      if (!playerColor || plies <= 0) return;
       engine.stop();
+      const historySlice = gameRef.current.history.slice(-plies);
+      const clockStartIdx = Math.max(0, clockHistory.current.length - plies);
+      if (saveForRedo && historySlice.length > 0) {
+        const batch: RedoMoveEntry[] = historySlice.map((m, i) => ({
+          from: m.from,
+          to: m.to,
+          ...(m.promotion ? { promotion: m.promotion as PromotionPiece } : {}),
+          ...(clockHistory.current[clockStartIdx + i]
+            ? { clockSnapshot: clockHistory.current[clockStartIdx + i] }
+            : {}),
+        }));
+        setRedoStack((prev) => [...prev, batch]);
+      }
       const newLength = game.history.length - plies;
       game.undo(plies);
       clockHistory.current = clockHistory.current.slice(0, clockHistory.current.length - plies);
       const snapshot = clockHistory.current[clockHistory.current.length - 1];
       if (snapshot) clock.restore(snapshot, newLength > 0 ? playerColor : null);
       setHint(null);
+      setViewPly(null);
       setEngineMoveError(null);
       setPending(null);
       setRecords((rs) => rs.filter((r) => r.corrected || r.ply < newLength));
+      setEvalHistory((pts) => pts.filter((p) => p.ply < newLength));
     },
     [clock, engine, game, playerColor],
   );
 
   const undo = useCallback(() => {
     if (!canUndo) return;
-    takeBack(undoPlies);
+    takeBack(undoPlies, true);
     setCoachPhase("idle");
   }, [canUndo, takeBack, undoPlies]);
 
+  const canRedo =
+    active !== null && redoStack.length > 0 && !hintPending && !coachBlocking && !game.isOver;
+
+  const redo = useCallback(() => {
+    if (!canRedo || !playerColor) return;
+    const batch = redoStack[redoStack.length - 1];
+    if (!batch || batch.length === 0) return;
+    engine.stop();
+    for (const entry of batch) {
+      const played = gameRef.current.move({
+        from: entry.from,
+        to: entry.to,
+        ...(entry.promotion ? { promotion: entry.promotion } : {}),
+      });
+      if (!played) break;
+      const snap = entry.clockSnapshot ?? clock.press(played.color);
+      clockHistory.current.push(snap);
+    }
+    const latestSnap = clockHistory.current[clockHistory.current.length - 1];
+    if (latestSnap) clock.restore(latestSnap, playerColor);
+    setRedoStack((prev) => prev.slice(0, -1));
+    setHint(null);
+    setViewPly(null);
+    setEngineMoveError(null);
+  }, [canRedo, clock, engine, playerColor, redoStack]);
+
   const latestRecord = records[records.length - 1] ?? null;
 
-  /** "Исправить ход": take back the mistake and show the coach's recommended move. */
+  /** "Исправить ход": take back the mistake and show Level 3 best move on the board. */
   const fixMove = useCallback(() => {
     if (coachPhase !== "review" || !latestRecord || !playerColor) return;
     const record = latestRecord;
-    // Mark first: takeBack() drops uncorrected records of the removed ply.
     setRecords((rs) => rs.map((r) => (r === record ? { ...r, corrected: true } : r)));
-    takeBack(1);
-    const best = record.verdict.best;
-    const legal = best
-      ? gameRef.current
-          .chess()
-          .moves({ verbose: true })
-          .find((m) => toUciMove(m) === best.uci)
-      : undefined;
-    if (legal) {
-      setHint({
-        from: legal.from,
-        to: legal.to,
-        san: legal.san,
-        piece: legal.piece,
-        captured: legal.captured ?? null,
-        promotion: legal.promotion ?? null,
-      });
+    takeBack(1, false);
+    if (record.verdict.best) {
+      const layered = buildLayeredHint(gameRef.current.fen, record.verdict.best.uci, 3);
+      if (layered) setHint(layered);
     }
     setCoachPhase("fixing");
   }, [coachPhase, latestRecord, playerColor, takeBack]);
 
-  /** "Продолжить игру": keep the move; the coach remembers the mistake. */
   const continueGame = useCallback(() => {
     if (coachPhase === "review") setCoachPhase("idle");
   }, [coachPhase]);
 
+  const isViewingHistory = viewPly !== null && viewPly < game.history.length;
+  const inspected = useMemo(
+    () => (isViewingHistory ? buildSnapshotAtPly(game.history, viewPly) : null),
+    [game.history, isViewingHistory, viewPly],
+  );
+
+  const inspectPly = useCallback(
+    (ply: number | null) => {
+      if (ply === null || ply >= game.history.length) {
+        setViewPly(null);
+      } else {
+        setViewPly(Math.max(0, ply));
+      }
+    },
+    [game.history.length],
+  );
+
+  const stepHistory = useCallback(
+    (delta: number) => {
+      const current = viewPly ?? game.history.length;
+      const next = Math.max(0, Math.min(game.history.length, current + delta));
+      setViewPly(next >= game.history.length ? null : next);
+    },
+    [game.history.length, viewPly],
+  );
+
   const isPlayersTurn =
-    active !== null && !game.isOver && game.turn === playerColor && !coachBlocking;
+    active !== null &&
+    !game.isOver &&
+    !isViewingHistory &&
+    game.turn === playerColor &&
+    !coachBlocking;
   const canHint = isPlayersTurn && engine.status === "ready" && !hintPending;
 
-  const requestHint = useCallback(() => {
-    if (!canHint) return;
-    const fen = game.fen;
-    hintPendingRef.current = true;
-    setHintPending(true);
-    engine
-      .search({ purpose: "hint", moves: uciMoves, ...HINT_SEARCH })
-      .then((result) => {
-        if (result.cancelled || !result.bestMove || gameRef.current.fen !== fen) return;
-        const parsed = parseUciMove(result.bestMove);
-        if (!parsed) return;
-        const legal = gameRef.current.legalMoves.find(
-          (m) =>
-            m.from === parsed.from &&
-            m.to === parsed.to &&
-            (m.promotion ?? null) === (parsed.promotion ?? null),
-        );
-        if (!legal) return;
-        setHint({
-          from: legal.from,
-          to: legal.to,
-          san: legal.san,
-          piece: legal.piece,
-          captured: legal.captured ?? null,
-          promotion: legal.promotion ?? null,
+  const requestHint = useCallback(
+    (requestedLevel?: HintLevel) => {
+      if (!canHint) return;
+      // Escalate existing layered hint cleanly without triggering another search.
+      if (hint) {
+        const nextLevel: HintLevel =
+          requestedLevel ?? (hint.level < 3 ? ((hint.level + 1) as HintLevel) : 3);
+        if (nextLevel !== hint.level) setHint({ ...hint, level: nextLevel });
+        return;
+      }
+
+      const fen = game.fen;
+      hintPendingRef.current = true;
+      setHintPending(true);
+      engine
+        .search({ purpose: "hint", moves: uciMoves, ...HINT_SEARCH })
+        .then((result) => {
+          if (result.cancelled || !result.bestMove || gameRef.current.fen !== fen) return;
+          if (result.info?.score && playerColor) {
+            setLiveEval({
+              score: toWhitePov(result.info.score, playerColor),
+              depth: result.info.depth,
+              lines: result.lines,
+              turn: playerColor,
+            });
+          }
+          const level = requestedLevel ?? 1;
+          const layered = buildLayeredHint(fen, result.bestMove, level);
+          if (layered) setHint(layered);
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          hintPendingRef.current = false;
+          setHintPending(false);
         });
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        hintPendingRef.current = false;
-        setHintPending(false);
-      });
-  }, [canHint, engine, game.fen, uciMoves]);
+    },
+    [canHint, engine, game.fen, hint, playerColor, uciMoves],
+  );
 
   const resign = useCallback(() => {
     if (!active || game.isOver || !engineColor) return;
@@ -383,10 +606,19 @@ export function usePlayController() {
     lastMove,
     isPlayersTurn,
     canUndo,
+    canRedo,
     canHint,
     canResign: active !== null && !game.isOver,
     hasMoves: game.history.length > 0,
-    thinkMs: thinkMsRef.current,
+    viewPly,
+    inspected,
+    liveEval,
+    evalHistory,
+    thinkMs: thinkTimeMs(
+      userSettings.engine.thinkTime,
+      userSettings.engine.customSeconds,
+      game.fen,
+    ),
     coach: {
       enabled: coachOn,
       phase: coachPhase,
@@ -401,11 +633,14 @@ export function usePlayController() {
       updateSettings,
       playerMove,
       undo,
+      redo,
       requestHint,
       resign,
       flip,
       fixMove,
       continueGame,
+      inspectPly,
+      stepHistory,
     },
   };
 }

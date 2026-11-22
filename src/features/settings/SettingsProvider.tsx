@@ -10,6 +10,7 @@ import {
 
 import {
   DEFAULT_SETTINGS,
+  effectiveSoundVolume,
   loadSettings,
   parseSettings,
   saveSettings,
@@ -19,15 +20,21 @@ import {
   type EngineSettings,
   type GameSetupSettings,
   type SoundSettings,
+  type VoiceCoachSettings,
 } from "@/lib/settings/settings";
 import { eventForClip, type SoundClip } from "@/lib/sound/gameSounds";
 import { playClip } from "@/lib/sound/synth";
 
 export interface SettingsPatch {
+  uiTheme?: AppSettings["uiTheme"];
+  playerName?: AppSettings["playerName"];
   pieceSet?: AppSettings["pieceSet"];
+  whitePieceSet?: AppSettings["whitePieceSet"];
+  blackPieceSet?: AppSettings["blackPieceSet"];
   boardTheme?: AppSettings["boardTheme"];
   customBoard?: Partial<AppSettings["customBoard"]>;
   sound?: Partial<Omit<SoundSettings, "events">> & { events?: Partial<SoundSettings["events"]> };
+  voice?: Partial<VoiceCoachSettings>;
   board?: Partial<BoardDisplaySettings>;
   game?: Partial<GameSetupSettings>;
   engine?: Partial<EngineSettings>;
@@ -54,14 +61,19 @@ const SettingsContext = createContext<SettingsContextValue>({
 export function mergeSettings(current: AppSettings, patch: SettingsPatch): AppSettings {
   return parseSettings({
     ...current,
-    ...(patch.pieceSet ? { pieceSet: patch.pieceSet } : {}),
-    ...(patch.boardTheme ? { boardTheme: patch.boardTheme } : {}),
+    ...(patch.uiTheme !== undefined ? { uiTheme: patch.uiTheme } : {}),
+    ...(patch.playerName !== undefined ? { playerName: patch.playerName } : {}),
+    ...(patch.pieceSet !== undefined ? { pieceSet: patch.pieceSet } : {}),
+    ...(patch.whitePieceSet !== undefined ? { whitePieceSet: patch.whitePieceSet } : {}),
+    ...(patch.blackPieceSet !== undefined ? { blackPieceSet: patch.blackPieceSet } : {}),
+    ...(patch.boardTheme !== undefined ? { boardTheme: patch.boardTheme } : {}),
     customBoard: { ...current.customBoard, ...patch.customBoard },
     sound: {
       ...current.sound,
       ...patch.sound,
       events: { ...current.sound.events, ...patch.sound?.events },
     },
+    voice: { ...current.voice, ...patch.voice },
     board: { ...current.board, ...patch.board },
     game: { ...current.game, ...patch.game },
     engine: { ...current.engine, ...patch.engine },
@@ -70,10 +82,6 @@ export function mergeSettings(current: AppSettings, patch: SettingsPatch): AppSe
 
 interface SettingsProviderProps {
   children: ReactNode;
-  /**
-   * Read storage during the first render. Only for client-only renderers (desktop app);
-   * the SSR web app reads after hydration to avoid a mismatch.
-   */
   loadImmediately?: boolean;
 }
 
@@ -87,6 +95,10 @@ export function SettingsProvider({ children, loadImmediately = false }: Settings
     if (loadImmediately) return;
     setSettings(loadSettings(window.localStorage));
   }, [loadImmediately]);
+
+  useEffect(() => {
+    document.documentElement.dataset["uiTheme"] = settings.uiTheme;
+  }, [settings.uiTheme]);
 
   const commit = useCallback((next: AppSettings) => {
     saveSettings(window.localStorage, next);
@@ -102,14 +114,18 @@ export function SettingsProvider({ children, loadImmediately = false }: Settings
 
   const play = useCallback(
     (clip: SoundClip) => {
-      if (soundAllowed(settings.sound, eventForClip(clip))) playClip(clip, settings.sound.volume);
+      if (soundAllowed(settings.sound, eventForClip(clip))) {
+        playClip(clip, effectiveSoundVolume(settings.sound));
+      }
     },
     [settings.sound],
   );
 
   const preview = useCallback(
     (clip: SoundClip) => {
-      if (settings.sound.enabled) playClip(clip, settings.sound.volume);
+      if (settings.sound.enabled) {
+        playClip(clip, effectiveSoundVolume(settings.sound));
+      }
     },
     [settings.sound],
   );

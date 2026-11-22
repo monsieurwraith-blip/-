@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version ?? "1.0.0";
 const source = join(root, "release", "win-unpacked");
-if (!existsSync(join(source, "CHESS STUDIO.exe"))) {
+if (!existsSync(join(source, "ProChess.exe"))) {
   throw new Error("release/win-unpacked is missing — run `electron-builder --win dir` first.");
 }
 
@@ -51,7 +51,7 @@ function findMakensis() {
 }
 
 const { bin, nsisDir } = findMakensis();
-const out = join(root, "release", `Chess Studio Setup ${version}.exe`);
+const out = join(root, "release", `ProChess Setup ${version}.exe`);
 execFileSync(
   bin,
   [

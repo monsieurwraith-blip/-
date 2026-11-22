@@ -11,7 +11,12 @@ import { formatEval, toWhitePov } from "@/lib/coach/evaluation";
 import { playUci } from "@/lib/coach/tactics";
 import { STOCKFISH_BUILD_LABEL, STOCKFISH_WORKER_URL } from "@/lib/engine/config";
 import { formatSeconds, type ThinkTimeId } from "@/lib/engine/thinkTime";
-import type { EngineSettings } from "@/lib/settings/settings";
+import {
+  PLAY_STYLES,
+  type DepthLimit,
+  type EngineSettings,
+  type PlayStyleId,
+} from "@/lib/settings/settings";
 import { cn } from "@/lib/utils";
 
 import { ThinkTimeSelector } from "./ThinkTimeSelector";
@@ -29,16 +34,18 @@ interface EngineStatusCardProps {
   turn: Color;
   thinkTime: ThinkTimeId;
   customSeconds: number;
+  depthLimit?: DepthLimit;
+  playStyle?: PlayStyleId;
   onThinkTimeChange: (patch: Partial<EngineSettings>) => void;
   onRestart: () => void;
 }
 
 const LABEL: Record<EngineStatus, string> = {
-  loading: "Загрузка движка…",
+  loading: "Загрузка…",
   ready: "Готов",
-  thinking: "Думает",
+  thinking: "Stockfish is calculating...",
   moving: "Ходит",
-  error: "Ошибка движка",
+  error: "Ошибка",
 };
 
 function formatNodes(nodes: number): string {
@@ -70,15 +77,17 @@ export function EngineStatusCard({
   turn,
   thinkTime,
   customSeconds,
+  depthLimit = null,
+  playStyle = "balanced",
   onThinkTimeChange,
   onRestart,
 }: EngineStatusCardProps) {
   const busy = status === "thinking" || status === "moving";
   const label =
     status === "thinking" && purpose === "hint"
-      ? "Ищет подсказку"
+      ? "Подбор подсказки…"
       : status === "thinking" && purpose === "analysis"
-        ? "Анализ тренера"
+        ? "Анализ тренера…"
         : LABEL[status];
 
   const [now, setNow] = useState(() => Date.now());
@@ -92,10 +101,10 @@ export function EngineStatusCard({
   const elapsedMs = timing ? Math.max(0, now - timing.startedAt) : 0;
   const timeProgress =
     timing && timing.budgetMs > 0 ? Math.min(100, (elapsedMs / timing.budgetMs) * 100) : 0;
+  const targetDepth = depthLimit ?? level.depth ?? 20;
   const depthProgress = Math.min(
     100,
-    ((info?.depth ?? 0) /
-      (purpose === "hint" ? 16 : purpose === "analysis" ? 18 : (level.depth ?? 20))) *
+    ((info?.depth ?? 0) / (purpose === "hint" ? 16 : purpose === "analysis" ? 18 : targetDepth)) *
       100,
   );
   const progressPct =
@@ -112,13 +121,15 @@ export function EngineStatusCard({
     return sanFromUci(fen, info.pv[0]);
   }, [showBoardCandidate, fen, info?.pv]);
 
+  const styleLabel = PLAY_STYLES.find((s) => s.id === playStyle)?.label ?? "Сбалансированный";
+
   return (
     <section className="panel p-4" aria-label="Состояние движка">
       <div className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
-          <Cpu className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <Cpu className="size-4 shrink-0 text-primary" aria-hidden />
           <div className="min-w-0">
-            <p className="truncate text-sm font-medium">{engineName ?? "Stockfish"}</p>
+            <p className="truncate text-sm font-medium">{engineName ?? "Stockfish 19"}</p>
             <p className="truncate text-xs text-muted-foreground">
               {STOCKFISH_BUILD_LABEL} · Web Worker
             </p>
@@ -126,10 +137,12 @@ export function EngineStatusCard({
         </div>
         <span
           className={cn(
-            "flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs",
+            "flex shrink-0 items-center gap-1.5 text-xs font-mono",
             status === "error"
-              ? "border-destructive/40 text-destructive"
-              : "border-border text-foreground/85",
+              ? "text-destructive"
+              : busy
+                ? "text-primary"
+                : "text-muted-foreground",
           )}
           role="status"
           aria-live="polite"
@@ -159,7 +172,7 @@ export function EngineStatusCard({
             <span>
               {info
                 ? `Depth ${info.depth}${info.seldepth ? `/${info.seldepth}` : ""}${info.nodes ? ` · ${formatNodes(info.nodes)}` : ""}`
-                : "расчёт позиции…"}
+                : "Stockfish is calculating..."}
             </span>
             {timing && (
               <span>
@@ -192,8 +205,12 @@ export function EngineStatusCard({
         <div className="mt-3 space-y-2.5 border-t border-border/70 pt-3">
           {status !== "thinking" && (
             <p className="text-xs text-muted-foreground">
-              {level.label}: Skill Level {level.skillLevel}
-              {level.depth !== null ? ` · глубина до ${level.depth}` : " · без ограничения глубины"}
+              {level.label} (Skill {level.skillLevel}) · {styleLabel} ·{" "}
+              {depthLimit
+                ? `Глубина ${depthLimit}`
+                : level.depth
+                  ? `Глубина ${level.depth}`
+                  : "Без лимита"}
             </p>
           )}
           <ThinkTimeSelector

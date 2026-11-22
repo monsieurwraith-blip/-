@@ -1,3 +1,5 @@
+import { Loader2 } from "lucide-react";
+
 import type { GameOutcome } from "@/lib/chess/outcome";
 import { outcomeHeadline, outcomeReason, outcomeScore } from "@/lib/chess/outcome";
 import type { Color } from "@/lib/chess/types";
@@ -43,12 +45,12 @@ export function GameStatusCard({
       <div className="flex items-center justify-between">
         <p className="eyebrow">Ход {moveNumber}</p>
         {inCheck && (
-          <span className="rounded-full bg-destructive/15 px-2.5 py-0.5 text-xs font-medium text-destructive">
+          <span className="text-xs font-semibold uppercase tracking-wider text-destructive">
             Шах
           </span>
         )}
       </div>
-      <div className="mt-1.5 flex items-center gap-2.5">
+      <div className="mt-1.5 flex flex-wrap items-center gap-2.5">
         <span
           className={cn(
             "size-3 rounded-full border border-input",
@@ -57,9 +59,15 @@ export function GameStatusCard({
           aria-hidden
         />
         <h2 className="text-lg font-medium">{turn === "w" ? "Ход белых" : "Ход чёрных"}</h2>
-        <span className="text-sm text-muted-foreground">
-          · {yourTurn ? "ваш ход" : engineThinking ? "Stockfish думает" : "ход Stockfish"}
-        </span>
+        {engineThinking ? (
+          <span className="flex items-center gap-1.5 text-sm font-medium text-primary">
+            · <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden /> Бот думает…
+          </span>
+        ) : (
+          <span className="text-sm text-muted-foreground">
+            · {yourTurn ? "ваш ход" : "ход Stockfish"}
+          </span>
+        )}
       </div>
       {clockWaiting && (
         <p className="mt-2 text-xs text-muted-foreground">

@@ -10,18 +10,21 @@ import {
   SearchCheck,
   Sparkles,
   Undo2,
+  Volume2,
 } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { coachMood, type OutcomeTone } from "@/features/coach/coachMood";
 import type { IdeaPlayback } from "@/features/coach/useIdeaPlayback";
 import type { CoachPhase } from "@/features/play/usePlayController";
+import { useSettings } from "@/features/settings/SettingsProvider";
 import { formatEval } from "@/lib/coach/evaluation";
 import { TAG_LABEL } from "@/lib/coach/explain";
 import { buildReport, reviewMoments, type CoachRecord } from "@/lib/coach/report";
 import { outcomeTone, type GameOutcome } from "@/lib/chess/outcome";
 import type { Color } from "@/lib/chess/types";
+import { getLastSpokenPhrase, repeatLastCoachPhrase, subscribeSpeaking } from "@/lib/sound/speech";
 import { cn } from "@/lib/utils";
 
 import { CoachAvatar } from "./CoachAvatar";
@@ -39,6 +42,7 @@ interface CoachPanelProps {
   onContinue: () => void;
   onShowIdea: () => void;
   onStopIdea: () => void;
+  onShowBestMove?: () => void;
   onOpenReport: () => void;
   onOpenReview: () => void;
 }
@@ -66,12 +70,18 @@ export function CoachPanel({
   onContinue,
   onShowIdea,
   onStopIdea,
+  onShowBestMove,
   onOpenReport,
   onOpenReview,
 }: CoachPanelProps) {
+  const { settings } = useSettings();
+  const [speaking, setSpeaking] = useState(false);
+
+  useEffect(() => subscribeSpeaking(setSpeaking), []);
+
   const tone: OutcomeTone | null = outcome ? outcomeTone(outcome, playerColor) : null;
   const latestClass = latest?.verdict.classification ?? null;
-  const mood = coachMood(phase, latestClass, tone);
+  const mood = coachMood(phase, latestClass, tone, speaking);
   const report = useMemo(() => buildReport(records), [records]);
   const mistakes = useMemo(() => reviewMoments(records), [records]);
   const goodCount =
@@ -80,32 +90,52 @@ export function CoachPanel({
 
   const showReviewBox = phase === "review" && latest !== null && !outcome;
   const v = latest?.verdict ?? null;
+  const hasLastPhrase = Boolean(getLastSpokenPhrase());
 
   return (
     <section
       className={cn(
         "panel animate-rise overflow-hidden p-4 transition-colors",
+        speaking && "border-primary/45 shadow-[0_0_24px_-10px_rgba(22,199,132,0.35)]",
         showReviewBox &&
+          !speaking &&
           (latest.verdict.classification === "blunder"
             ? "border-move-blunder/40"
             : latest.verdict.classification === "mistake"
               ? "border-move-mistake/40"
               : "border-move-inaccuracy/40"),
       )}
-      aria-label="Chess Coach"
+      aria-label="Интеллектуальный тренер ProChess"
     >
       <div className="flex items-start gap-3">
         <CoachAvatar mood={mood} reactionKey={reactionKey} className="size-16 shrink-0" />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center justify-between gap-1.5">
-            <span className="eyebrow text-primary">Chess Coach</span>
-            {v && phase !== "analyzing" && !outcome && <MoveClassBadge value={v.classification} />}
-            {phase === "analyzing" && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
-                <Loader2 className="size-3 animate-spin" aria-hidden />
-                Анализ…
-              </span>
-            )}
+            <span className="eyebrow text-primary">AI Coach</span>
+            <div className="flex items-center gap-1.5">
+              {hasLastPhrase && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 gap-1 px-1.5 text-[11px] text-muted-foreground hover:text-primary"
+                  onClick={() => repeatLastCoachPhrase(settings.voice, settings.sound.masterVolume)}
+                  title="Повторить последнюю фразу тренера"
+                >
+                  <Volume2 className="size-3" aria-hidden />
+                  Повторить фразу
+                </Button>
+              )}
+              {v && phase !== "analyzing" && !outcome && (
+                <MoveClassBadge value={v.classification} />
+              )}
+              {phase === "analyzing" && (
+                <span className="inline-flex items-center gap-1 font-mono text-[11px] text-primary">
+                  <Loader2 className="size-3 animate-spin" aria-hidden />
+                  Анализ…
+                </span>
+              )}
+            </div>
           </div>
 
           {outcome ? (
@@ -128,10 +158,10 @@ export function CoachPanel({
             </p>
           ) : phase === "fixing" ? (
             <div className="mt-1.5 space-y-1">
-              <p className="text-sm font-medium text-foreground">Попробуйте лучший ход</p>
+              <p className="text-sm font-medium text-foreground">Сыграйте сильнейший ход</p>
               <p className="text-xs leading-relaxed text-muted-foreground">
                 {v?.best
-                  ? `Сыграйте ${v.best.san} на доске — стрелка подсказывает направление. Можно выбрать и другой ход.`
+                  ? `Попробуйте ${v.best.san} на доске — стрелка подсказывает направление.`
                   : "Сделайте новый ход на доске."}
               </p>
             </div>
@@ -191,7 +221,8 @@ export function CoachPanel({
             </div>
           ) : (
             <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-              Я слежу за партией и оценю каждый ваш ход с помощью Stockfish. Сделайте первый ход!
+              Тренер ProChess следит за партией и оценивает каждый ваш ход в реальном времени.
+              Сделайте первый ход!
             </p>
           )}
         </div>
@@ -233,10 +264,10 @@ export function CoachPanel({
               variant="panel"
               size="sm"
               className="w-full"
-              onClick={idea.active ? onStopIdea : onShowIdea}
+              onClick={idea.active ? onStopIdea : (onShowBestMove ?? onShowIdea)}
             >
               {idea.active ? <EyeOff /> : <Eye />}
-              {idea.active ? "Вернуться к позиции" : "Показать идею"}
+              {idea.active ? "Вернуться к позиции" : "Показать лучший ход"}
             </Button>
           )}
         </div>

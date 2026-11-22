@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { THINK_TIME_PRESETS, clampCustomSeconds, isThinkTimeId, thinkTimeMs } from "./thinkTime";
+import {
+  AUTO_THINK_MAX_MS,
+  AUTO_THINK_MIN_MS,
+  THINK_TIME_PRESETS,
+  clampCustomSeconds,
+  estimatePositionComplexityThinkMs,
+  isThinkTimeId,
+  thinkTimeMs,
+} from "./thinkTime";
 
 describe("bot think time", () => {
   it("offers 1, 2, 3, 5, 10, 15 and 30 seconds", () => {
@@ -17,6 +25,21 @@ describe("bot think time", () => {
     expect(thinkTimeMs("custom", 4.5)).toBe(4500);
   });
 
+  it("estimates adaptive 3-7s think time scaled by position complexity", () => {
+    const simpleEndgame = "4k3/8/8/8/8/8/4P3/4K3 w - - 0 1";
+    const sharpMiddlegame = "r1bq1rk1/pp2bppp/2n1pn2/2pp4/3P1B2/2PBPN2/PP1N1PPP/R2Q1RK1 w - - 0 9";
+
+    const simpleMs = estimatePositionComplexityThinkMs(simpleEndgame);
+    const sharpMs = estimatePositionComplexityThinkMs(sharpMiddlegame);
+
+    expect(simpleMs).toBeGreaterThanOrEqual(AUTO_THINK_MIN_MS);
+    expect(simpleMs).toBeLessThanOrEqual(AUTO_THINK_MAX_MS);
+    expect(sharpMs).toBeGreaterThanOrEqual(AUTO_THINK_MIN_MS);
+    expect(sharpMs).toBeLessThanOrEqual(AUTO_THINK_MAX_MS);
+    expect(sharpMs).toBeGreaterThan(simpleMs);
+    expect(thinkTimeMs("auto", 7, sharpMiddlegame)).toBe(sharpMs);
+  });
+
   it("clamps custom seconds to 0.5–120", () => {
     expect(clampCustomSeconds(0)).toBe(0.5);
     expect(clampCustomSeconds(999)).toBe(120);
@@ -25,6 +48,7 @@ describe("bot think time", () => {
   });
 
   it("validates ids", () => {
+    expect(isThinkTimeId("auto")).toBe(true);
     expect(isThinkTimeId("custom")).toBe(true);
     expect(isThinkTimeId("15")).toBe(true);
     expect(isThinkTimeId("4")).toBe(false);

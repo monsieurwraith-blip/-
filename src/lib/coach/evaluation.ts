@@ -7,13 +7,7 @@ import type { Color } from "@/lib/chess/types";
 import type { EngineScore } from "@/lib/chess/uci";
 
 export type MoveClass =
-  | "brilliant"
-  | "best"
-  | "excellent"
-  | "good"
-  | "inaccuracy"
-  | "mistake"
-  | "blunder";
+  "brilliant" | "best" | "excellent" | "good" | "inaccuracy" | "mistake" | "blunder";
 
 export const MOVE_CLASSES: readonly MoveClass[] = [
   "brilliant",
@@ -40,7 +34,14 @@ export function isMistakeClass(c: MoveClass): boolean {
 }
 
 /** Thresholds on the drop of the mover's win % (0–100). */
-export const WIN_DROP = { best: 0.8, excellent: 2.5, good: 6, inaccuracy: 6, mistake: 11, blunder: 18 };
+export const WIN_DROP = {
+  best: 0.8,
+  excellent: 2.5,
+  good: 6,
+  inaccuracy: 6,
+  mistake: 11,
+  blunder: 18,
+};
 
 const CP_CAP = 1000;
 
@@ -77,7 +78,12 @@ export interface ClassifyInput {
   sacrifice: boolean;
 }
 
-export function classifyMove({ winBefore, winAfter, isTopMove, sacrifice }: ClassifyInput): MoveClass {
+export function classifyMove({
+  winBefore,
+  winAfter,
+  isTopMove,
+  sacrifice,
+}: ClassifyInput): MoveClass {
   const drop = Math.max(0, winBefore - winAfter);
   const nearBest = isTopMove || drop < WIN_DROP.best;
   if (nearBest && sacrifice && winAfter >= 45 && winBefore < 92) return "brilliant";

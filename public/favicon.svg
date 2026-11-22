@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#171B22" />
+      <stop offset="100%" stop-color="#0B0D10" />
+    </linearGradient>
+    <linearGradient id="ag" x1="15%" y1="5%" x2="85%" y2="95%">
+      <stop offset="0%" stop-color="#F4F6F8" />
+      <stop offset="50%" stop-color="#C6CDD6" />
+      <stop offset="100%" stop-color="#5D6775" />
+    </linearGradient>
+  </defs>
+  <rect x="4" y="4" width="112" height="112" rx="24" fill="url(#bg)" stroke="#16C784" stroke-width="2.5" />
+  <polygon points="15,30 46,42 44,48 21,39" fill="#8C96A4" />
+  <polygon points="18,44 44,51 42,56 24,50" fill="#6F7987" />
+  <polygon points="105,30 74,42 76,48 99,39" fill="#8C96A4" />
+  <polygon points="102,44 76,51 78,56 96,50" fill="#6F7987" />
+  <path d="M44 96 L46 88 L74 88 L76 96 Z" fill="url(#ag)" />
+  <path d="M49 85 L52 63 C46 57 46 46 51 36 L55 24 L61 29 L66 23 L68 32 C74 36 78 44 77 52 L67 56 L61 52 L57 56 C66 61 70 72 68 85 Z" fill="url(#ag)" />
+  <path d="M52 84 C54 71 51 60 49 48 C48 41 51 35 55 28" fill="none" stroke="#16C784" stroke-width="2.5" stroke-linecap="round" />
+  <polygon points="62,41 67,39 65,43" fill="#16C784" />
+</svg>

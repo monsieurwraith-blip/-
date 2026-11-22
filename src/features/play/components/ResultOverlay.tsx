@@ -1,5 +1,6 @@
 import { BarChart3, Eye, Plus, RotateCcw, SearchCheck } from "lucide-react";
 
+import { ProChessLogo } from "@/components/brand/ProChessLogo";
 import { Button } from "@/components/ui/button";
 import {
   outcomeHeadline,
@@ -37,30 +38,47 @@ export function ResultOverlay({
   onDismiss,
 }: ResultOverlayProps) {
   const tone = outcomeTone(outcome, playerColor);
+  const isWin = tone === "win";
+
   return (
     <div
-      className="absolute inset-0 z-40 grid place-items-center bg-overlay p-4 backdrop-blur-[3px] animate-in fade-in duration-300"
+      className="absolute inset-0 z-40 grid place-items-center bg-overlay p-4 backdrop-blur-[4px] animate-in fade-in duration-300"
       onPointerDown={(e) => e.stopPropagation()}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="result-title"
-        className="panel w-[min(100%,22.5rem)] p-6 text-center shadow-[var(--shadow-float)] animate-rise"
+        className={cn(
+          "panel relative w-[min(100%,23.5rem)] overflow-hidden p-6 text-center shadow-[var(--shadow-float)] animate-rise",
+          isWin && "border-primary/50 shadow-[0_0_50px_-14px_rgba(22,199,132,0.45)]",
+        )}
       >
-        <p className="eyebrow">Партия окончена</p>
+        {isWin && (
+          <div className="mb-3 flex flex-col items-center">
+            <ProChessLogo
+              variant="emblem"
+              className="drop-shadow-[0_0_18px_rgba(22,199,132,0.35)]"
+            />
+            <span className="mt-2 font-mono text-[11px] font-semibold uppercase tracking-[0.28em] text-primary">
+              VICTORY
+            </span>
+          </div>
+        )}
+        {!isWin && <p className="eyebrow">Партия окончена</p>}
+
         <h2
           id="result-title"
           className={cn(
-            "mt-2 font-display text-5xl leading-none",
-            tone === "win" && "text-primary",
+            "mt-1 font-display text-4xl leading-none sm:text-5xl",
+            isWin && "text-primary",
             tone === "loss" && "text-foreground",
             tone === "draw" && "text-warning",
           )}
         >
           {outcomeHeadline(outcome, playerColor)}
         </h2>
-        <p className="mt-3 font-mono text-lg text-foreground/80">{outcomeScore(outcome)}</p>
+        <p className="mt-3 font-mono text-lg text-foreground/85">{outcomeScore(outcome)}</p>
         <p className="mt-1 text-sm text-muted-foreground">{outcomeReason(outcome)}</p>
 
         {coach && (

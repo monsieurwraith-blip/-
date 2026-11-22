@@ -1,16 +1,16 @@
 /**
- * Windows packaging for CHESS STUDIO.
- *   npm run desktop:dist  →  release/Chess Studio Setup <version>.exe   (installer)
- *                            release/Chess Studio Portable <version>.exe (no install)
+ * Windows packaging for ProChess.
+ *   npm run desktop:dist  →  release/ProChess Setup <version>.exe   (installer)
+ *                            release/ProChess Portable <version>.exe (no install)
  * Packages the staged folder desktop-dist/app (see scripts/desktop-build.mjs).
  */
 const electronVersion = require("electron/package.json").version;
 
 module.exports = {
-  appId: "app.chessstudio.desktop",
-  productName: "CHESS STUDIO",
-  executableName: "CHESS STUDIO",
-  copyright: "CHESS STUDIO",
+  appId: "app.prochess.desktop",
+  productName: "ProChess",
+  executableName: "ProChess",
+  copyright: "ProChess",
   electronVersion,
   directories: {
     app: "desktop-dist/app",
@@ -30,20 +30,20 @@ module.exports = {
     ],
   },
   nsis: {
-    artifactName: "Chess Studio Setup ${version}.${ext}",
+    artifactName: "ProChess Setup ${version}.${ext}",
     oneClick: false,
     perMachine: false,
     allowToChangeInstallationDirectory: true,
     createDesktopShortcut: "always",
     createStartMenuShortcut: true,
-    shortcutName: "CHESS STUDIO",
-    uninstallDisplayName: "CHESS STUDIO",
+    shortcutName: "ProChess",
+    uninstallDisplayName: "ProChess",
     installerIcon: "desktop/build/icon.ico",
     uninstallerIcon: "desktop/build/icon.ico",
     runAfterFinish: true,
     deleteAppDataOnUninstall: false,
   },
   portable: {
-    artifactName: "Chess Studio Portable ${version}.${ext}",
+    artifactName: "ProChess Portable ${version}.${ext}",
   },
 };

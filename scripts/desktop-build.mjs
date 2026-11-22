@@ -2,7 +2,7 @@
  * Stages the Windows desktop app in desktop-dist/app:
  *   renderer/  — client bundle (vite.desktop.config.ts), incl. Stockfish WASM and piece SVGs
  *   main.cjs   — Electron main process
- *   icon.png   — window icon
+ *   icon.png   — window icon (when available)
  *   package.json — minimal manifest with no dependencies (everything is bundled)
  * electron-builder and @electron/packager both package this folder.
  */
@@ -32,17 +32,20 @@ for (const required of [
 }
 
 cpSync(join(root, "desktop", "electron", "main.cjs"), join(stage, "main.cjs"));
-cpSync(join(root, "desktop", "build", "icon.png"), join(stage, "icon.png"));
+const iconPng = join(root, "desktop", "build", "icon.png");
+if (existsSync(iconPng)) {
+  cpSync(iconPng, join(stage, "icon.png"));
+}
 
 writeFileSync(
   join(stage, "package.json"),
   JSON.stringify(
     {
-      name: "chess-studio",
-      productName: "CHESS STUDIO",
+      name: "prochess",
+      productName: "ProChess",
       version: rootPkg.version ?? "1.0.0",
-      description: "CHESS STUDIO — шахматы против Stockfish",
-      author: "CHESS STUDIO",
+      description: "ProChess — профессиональная шахматная платформа со Stockfish 19",
+      author: "ProChess",
       license: "GPL-3.0-or-later",
       main: "main.cjs",
     },

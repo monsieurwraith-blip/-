@@ -7,6 +7,7 @@ import { GameSetupPanel } from "@/features/play/components/GameSetupPanel";
 import { SettingsProvider } from "@/features/settings/SettingsProvider";
 import { getDifficulty } from "@/lib/chess/difficulty";
 import { analyzeMove } from "@/lib/coach/explain";
+import { buildLayeredHint } from "@/lib/coach/hints";
 import type { CoachRecord } from "@/lib/coach/report";
 import { DEFAULT_SETTINGS } from "@/lib/settings/settings";
 
@@ -49,7 +50,7 @@ const idleIdea: IdeaPlayback = {
   replay: vi.fn(),
 };
 
-describe("Think time & Coach UI", () => {
+describe("Think time, Layered Hints & Coach UI", () => {
   it("GameSetupPanel lets the user switch mode and bot think time", () => {
     const onChange = vi.fn();
     const onEngineChange = vi.fn();
@@ -77,7 +78,7 @@ describe("Think time & Coach UI", () => {
     expect(onEngineChange).toHaveBeenCalledWith({ thinkTime: "custom" });
   });
 
-  it("EngineStatusCard displays depth, evaluation, and best move while thinking", () => {
+  it("EngineStatusCard displays Stockfish calculating status, depth, eval, and best move", () => {
     render(
       <EngineStatusCard
         status="thinking"
@@ -103,6 +104,7 @@ describe("Think time & Coach UI", () => {
       />,
     );
 
+    expect(screen.getByText("Stockfish is calculating...")).toBeInTheDocument();
     expect(screen.getByText(/Depth 12\/16/i)).toBeInTheDocument();
     expect(screen.getByText("+0,5")).toBeInTheDocument();
     expect(screen.getByText("Nf3")).toBeInTheDocument();
@@ -115,21 +117,23 @@ describe("Think time & Coach UI", () => {
     const onShowIdea = vi.fn();
 
     render(
-      <CoachPanel
-        phase="review"
-        records={[rec]}
-        latest={rec}
-        error={null}
-        outcome={null}
-        playerColor="w"
-        idea={idleIdea}
-        onFixMove={onFix}
-        onContinue={onContinue}
-        onShowIdea={onShowIdea}
-        onStopIdea={vi.fn()}
-        onOpenReport={vi.fn()}
-        onOpenReview={vi.fn()}
-      />,
+      <SettingsProvider>
+        <CoachPanel
+          phase="review"
+          records={[rec]}
+          latest={rec}
+          error={null}
+          outcome={null}
+          playerColor="w"
+          idea={idleIdea}
+          onFixMove={onFix}
+          onContinue={onContinue}
+          onShowIdea={onShowIdea}
+          onStopIdea={vi.fn()}
+          onOpenReport={vi.fn()}
+          onOpenReview={vi.fn()}
+        />
+      </SettingsProvider>,
     );
 
     expect(screen.getByText(/Слон на a6/i)).toBeInTheDocument();
@@ -139,8 +143,18 @@ describe("Think time & Coach UI", () => {
     fireEvent.click(screen.getByRole("button", { name: /Продолжить игру/i }));
     expect(onContinue).toHaveBeenCalledOnce();
 
-    fireEvent.click(screen.getByRole("button", { name: /Показать идею/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Показать лучший ход/i }));
     expect(onShowIdea).toHaveBeenCalledOnce();
+  });
+
+  it("buildLayeredHint produces distinct Level 1, 2, and 3 coaching clues", () => {
+    const hint = buildLayeredHint(AFTER_E4_E5, "g1f3", 1);
+    expect(hint).not.toBeNull();
+    expect(hint?.san).toBe("Nf3");
+    expect(hint?.level).toBe(1);
+    expect(hint?.level1Text.length).toBeGreaterThan(10);
+    expect(hint?.level2Text).toContain("g1");
+    expect(hint?.level3Text).toContain("Nf3");
   });
 
   it("CoachReportDialog and MistakeReviewDialog render full report and step through mistakes", () => {

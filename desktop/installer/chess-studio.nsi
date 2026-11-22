@@ -11,15 +11,15 @@ SetCompressor /SOLID lzma
   !error "SOURCE_DIR is required"
 !endif
 !ifndef OUT_FILE
-  !define OUT_FILE "Chess Studio Setup ${VERSION}.exe"
+  !define OUT_FILE "ProChess Setup ${VERSION}.exe"
 !endif
 !ifndef ICON_FILE
   !error "ICON_FILE is required"
 !endif
 
-!define APP_NAME "CHESS STUDIO"
-!define APP_EXE "CHESS STUDIO.exe"
-!define APP_ID "app.chessstudio.desktop"
+!define APP_NAME "ProChess"
+!define APP_EXE "ProChess.exe"
+!define APP_ID "app.prochess.desktop"
 !define UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${APP_ID}"
 
 Name "${APP_NAME}"

@@ -1,6 +1,8 @@
 import type { Move } from "chess.js";
+import { ChevronFirst, ChevronLast, ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 
+import { Button } from "@/components/ui/button";
 import { CLASS_TEXT } from "@/features/coach/components/MoveClassBadge";
 import { MOVE_CLASS_INFO, type MoveClass } from "@/lib/coach/evaluation";
 import type { CoachRecord } from "@/lib/coach/report";
@@ -9,15 +11,24 @@ import { cn } from "@/lib/utils";
 interface MoveListProps {
   history: readonly Move[];
   coachRecords?: readonly CoachRecord[];
+  viewPly?: number | null;
+  onInspectPly?: (ply: number | null) => void;
+  onStepHistory?: (delta: number) => void;
 }
 
-export function MoveList({ history, coachRecords }: MoveListProps) {
+export function MoveList({
+  history,
+  coachRecords,
+  viewPly = null,
+  onInspectPly,
+  onStepHistory,
+}: MoveListProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const rows: { number: number; white: Move | undefined; black: Move | undefined }[] = [];
   for (let i = 0; i < history.length; i += 2) {
     rows.push({ number: i / 2 + 1, white: history[i], black: history[i + 1] });
   }
-  const lastIndex = history.length - 1;
+  const activePly = viewPly ?? history.length;
 
   const classByPly = useMemo(() => {
     const map = new Map<number, MoveClass>();
@@ -29,15 +40,74 @@ export function MoveList({ history, coachRecords }: MoveListProps) {
   }, [coachRecords]);
 
   useEffect(() => {
+    if (viewPly !== null) return;
     const el = scrollRef.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-  }, [history.length]);
+    if (el && typeof el.scrollTo === "function") {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    }
+  }, [history.length, viewPly]);
 
   return (
     <section className="panel flex min-h-0 flex-col" aria-label="История ходов">
-      <header className="flex items-center justify-between border-b border-border px-4 py-3">
-        <h2 className="eyebrow">Ходы</h2>
-        <span className="font-mono text-xs text-muted-foreground">{plyLabel(history.length)}</span>
+      <header className="flex items-center justify-between gap-2 border-b border-border px-4 py-2.5">
+        <div className="flex items-center gap-2">
+          <h2 className="eyebrow">Ходы</h2>
+          <span className="font-mono text-xs text-muted-foreground">
+            {plyLabel(history.length)}
+          </span>
+        </div>
+        {onInspectPly && history.length > 0 && (
+          <div className="flex items-center gap-0.5" aria-label="Навигация по истории">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              disabled={activePly <= 0}
+              onClick={() => onInspectPly(0)}
+              title="К началу партии"
+              aria-label="К началу партии"
+            >
+              <ChevronFirst className="size-3.5" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              disabled={activePly <= 0}
+              onClick={() => onStepHistory?.(-1)}
+              title="Предыдущий ход"
+              aria-label="Предыдущий ход"
+            >
+              <ChevronLeft className="size-3.5" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              disabled={activePly >= history.length}
+              onClick={() => onStepHistory?.(1)}
+              title="Следующий ход"
+              aria-label="Следующий ход"
+            >
+              <ChevronRight className="size-3.5" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              disabled={activePly >= history.length}
+              onClick={() => onInspectPly(null)}
+              title="К текущей позиции"
+              aria-label="К текущей позиции"
+            >
+              <ChevronLast className="size-3.5" />
+            </Button>
+          </div>
+        )}
       </header>
       <div className="grid grid-cols-[2.75rem_1fr_1fr] border-b border-border px-2 py-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
         <span className="pl-2">#</span>
@@ -63,13 +133,17 @@ export function MoveList({ history, coachRecords }: MoveListProps) {
                 <span className="py-1 pl-2 text-muted-foreground">{row.number}.</span>
                 <MoveCell
                   move={row.white}
-                  current={r * 2 === lastIndex}
+                  ply={r * 2 + 1}
+                  current={r * 2 + 1 === activePly}
                   moveClass={classByPly.get(r * 2)}
+                  onSelect={onInspectPly}
                 />
                 <MoveCell
                   move={row.black}
-                  current={r * 2 + 1 === lastIndex}
+                  ply={r * 2 + 2}
+                  current={r * 2 + 2 === activePly}
                   moveClass={classByPly.get(r * 2 + 1)}
+                  onSelect={onInspectPly}
                 />
               </li>
             ))}
@@ -82,15 +156,47 @@ export function MoveList({ history, coachRecords }: MoveListProps) {
 
 function MoveCell({
   move,
+  ply,
   current,
   moveClass,
+  onSelect,
 }: {
   move: Move | undefined;
+  ply: number;
   current: boolean;
   moveClass: MoveClass | undefined;
+  onSelect?: ((ply: number | null) => void) | undefined;
 }) {
   if (!move) return <span />;
   const info = moveClass ? MOVE_CLASS_INFO[moveClass] : null;
+  const content = (
+    <>
+      <span>{move.san}</span>
+      {info && moveClass && (
+        <span className={cn("text-[11px] font-semibold", CLASS_TEXT[moveClass])}>
+          {info.symbol}
+        </span>
+      )}
+    </>
+  );
+
+  if (onSelect) {
+    return (
+      <button
+        type="button"
+        onClick={() => onSelect(ply)}
+        className={cn(
+          "my-0.5 flex items-center justify-between gap-1 rounded px-2 py-0.5 text-left transition-colors hover:bg-accent/70 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+          current ? "bg-primary/18 font-semibold text-primary" : "text-foreground/90",
+        )}
+        aria-current={current ? "step" : undefined}
+        title={info ? `${info.en} · ${info.ru}` : `Просмотреть позицию после ${move.san}`}
+      >
+        {content}
+      </button>
+    );
+  }
+
   return (
     <span
       className={cn(
@@ -100,12 +206,7 @@ function MoveCell({
       aria-current={current ? "step" : undefined}
       title={info ? `${info.en} · ${info.ru}` : undefined}
     >
-      <span>{move.san}</span>
-      {info && moveClass && (
-        <span className={cn("text-[11px] font-semibold", CLASS_TEXT[moveClass])}>
-          {info.symbol}
-        </span>
-      )}
+      {content}
     </span>
   );
 }

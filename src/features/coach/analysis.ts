@@ -35,7 +35,10 @@ export interface PendingAnalysis {
  * Analyses one player move with Stockfish (MultiPV before the move, best reply after it)
  * and turns the real scores into the coach's verdict. Returns null when cancelled.
  */
-export async function analyzePlayerMove(search: Search, p: PendingAnalysis): Promise<CoachVerdict | null> {
+export async function analyzePlayerMove(
+  search: Search,
+  p: PendingAnalysis,
+): Promise<CoachVerdict | null> {
   const before = await search({
     purpose: "analysis",
     moves: p.movesBefore,

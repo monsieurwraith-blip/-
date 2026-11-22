@@ -83,7 +83,7 @@ export function playClip(clip: SoundClip, volume: number): void {
   if (!ac || volume <= 0) return;
   const master = ac.createGain();
   // Perceptual curve: small slider values stay quiet.
-  master.gain.value = Math.pow(Math.max(0, Math.min(100, volume)) / 100, 1.6) * 0.9;
+  master.gain.value = Math.pow(Math.max(0, Math.min(100, volume)) / 100, 1.6) * 0.85;
   master.connect(ac.destination);
   const t = ac.currentTime + 0.005;
 
@@ -99,6 +99,15 @@ export function playClip(clip: SoundClip, volume: number): void {
       tap(ac, master, t, 0.7, 1700);
       tone(ac, master, t + 0.02, 880, 0.16, 0.22, "sine");
       tone(ac, master, t + 0.11, 1174.7, 0.22, 0.2, "sine");
+      break;
+    case "checkmate":
+      tap(ac, master, t, 0.85, 1500);
+      tone(ac, master, t + 0.02, 587.33, 0.28, 0.22, "triangle");
+      tone(ac, master, t + 0.12, 880, 0.45, 0.24, "sine");
+      break;
+    case "menu":
+      tone(ac, master, t, 740, 0.055, 0.09, "sine");
+      tone(ac, master, t + 0.02, 1110, 0.06, 0.05, "sine");
       break;
     case "gameEnd":
       for (const f of [392, 523.25, 659.25]) tone(ac, master, t, f, 0.9, 0.12);

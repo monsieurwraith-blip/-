@@ -32,12 +32,17 @@ interface PieceImageProps {
 }
 
 /**
- * Piece from the set chosen in the settings. Material sets (glass, marble) fill the
- * SVG silhouette with a material layer and keep the original outlines on top.
+ * Piece from the set chosen in settings (supports independent white/black sets).
+ * Material sets fill the SVG silhouette with a CSS material layer and keep outlines on top.
  */
 export function PieceImage({ color, type, className, decorative = true, set }: PieceImageProps) {
   const { settings } = useSettings();
-  const pieceSet = getPieceSet(set ?? settings.pieceSet);
+  const resolvedId =
+    set ??
+    (color === "w"
+      ? (settings.whitePieceSet ?? settings.pieceSet)
+      : (settings.blackPieceSet ?? settings.pieceSet));
+  const pieceSet = getPieceSet(resolvedId);
   const src = pieceSrc(color, type, pieceSet.id as PieceSetId);
   const material = pieceSet.material;
   return (

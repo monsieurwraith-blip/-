@@ -55,7 +55,10 @@ export function useIdeaPlayback() {
   const [request, setRequest] = useState<IdeaRequest | null>(null);
   const [step, setStep] = useState(0);
   const [run, setRun] = useState(0);
-  const frames = useMemo(() => (request ? buildIdeaFrames(request.fen, request.pv) : []), [request]);
+  const frames = useMemo(
+    () => (request ? buildIdeaFrames(request.fen, request.pv) : []),
+    [request],
+  );
 
   useEffect(() => {
     if (!request || step >= frames.length - 1) return;

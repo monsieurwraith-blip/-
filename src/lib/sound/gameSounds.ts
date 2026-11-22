@@ -4,7 +4,15 @@ import type { Color } from "@/lib/chess/types";
 import type { SoundEvent } from "@/lib/settings/settings";
 
 /** Concrete clips; "result" in the settings covers both win and loss. */
-export type SoundClip = "move" | "capture" | "check" | "gameEnd" | "win" | "loss";
+export type SoundClip =
+  | "move"
+  | "capture"
+  | "check"
+  | "checkmate"
+  | "gameEnd"
+  | "win"
+  | "loss"
+  | "menu";
 
 export interface MoveLike {
   san: string;
@@ -12,7 +20,8 @@ export interface MoveLike {
 }
 
 export function clipForMove(move: MoveLike): SoundClip {
-  if (move.san.includes("+") || move.san.includes("#")) return "check";
+  if (move.san.includes("#")) return "checkmate";
+  if (move.san.includes("+")) return "check";
   if (move.captured) return "capture";
   return "move";
 }
@@ -26,5 +35,7 @@ export function clipForOutcome(outcome: GameOutcome, playerColor: Color): SoundC
 
 /** Settings toggle that controls a clip. */
 export function eventForClip(clip: SoundClip): SoundEvent {
-  return clip === "win" || clip === "loss" ? "result" : clip;
+  if (clip === "win" || clip === "loss") return "result";
+  if (clip === "checkmate") return "check";
+  return clip;
 }

@@ -250,7 +250,10 @@ function explainConsequence(
     if (reply.to === played.to) {
       tags.unshift("hanging");
       first = `${cap(pieceWord(played.piece))} на ${played.to} остаётся без достаточной защиты — соперник отвечает ${reply.san}.`;
-    } else if (wasDefendedByMover && after.attackers(reply.to, color).length < before.attackers(reply.to, color).length) {
+    } else if (
+      wasDefendedByMover &&
+      after.attackers(reply.to, color).length < before.attackers(reply.to, color).length
+    ) {
       tags.unshift("undefended");
       first = `Уйдя с ${played.from}, ${pieceWord(played.piece)} перестаёт защищать ${pieceWord(reply.captured, "acc")} на ${reply.to} — соперник отвечает ${reply.san}.`;
     } else {
@@ -304,7 +307,12 @@ interface Missed {
   tags: CoachTag[];
 }
 
-function explainMissed(before: Chess, best: AnalysisLine, color: Color, playedUci: string): Missed | null {
+function explainMissed(
+  before: Chess,
+  best: AnalysisLine,
+  color: Color,
+  playedUci: string,
+): Missed | null {
   const bestUci = best.pv[0];
   if (!bestUci || bestUci === playedUci) return null;
   const fen = before.fen();
@@ -344,7 +352,13 @@ function explainMissed(before: Chess, best: AnalysisLine, color: Color, playedUc
 }
 
 /** Scores the move and explains it. Pure: same input, same verdict. */
-export function analyzeMove({ fenBefore, played, playerColor: color, linesBefore, lineAfter }: CoachInput): CoachVerdict {
+export function analyzeMove({
+  fenBefore,
+  played,
+  playerColor: color,
+  linesBefore,
+  lineAfter,
+}: CoachInput): CoachVerdict {
   const before = new Chess(fenBefore);
   const after = new Chess(fenBefore);
   after.move(played.san);
@@ -374,7 +388,10 @@ export function analyzeMove({ fenBefore, played, playerColor: color, linesBefore
   const bestUci = top?.pv[0] ?? null;
   const bestBoard = new Chess(fenBefore);
   const bestMove = bestUci ? playUci(bestBoard, bestUci) : null;
-  const best = bestMove && bestUci ? { uci: bestUci, from: bestMove.from, to: bestMove.to, san: bestMove.san } : null;
+  const best =
+    bestMove && bestUci
+      ? { uci: bestUci, from: bestMove.from, to: bestMove.to, san: bestMove.san }
+      : null;
   const bestLine = top ? formatLine(fenBefore, pvToSan(fenBefore, top.pv, 5)) : "";
   const bestIdea = bestMove ? describeIdea(new Chess(fenBefore), bestMove) : "";
   const playedIdea = describeIdea(new Chess(fenBefore), played);
@@ -408,7 +425,9 @@ export function analyzeMove({ fenBefore, played, playerColor: color, linesBefore
         if (altSan) details.push(`Чуть точнее было ${altSan} — этот ход ${bestIdea}.`);
     }
   } else {
-    const consequence = lineAfter ? explainConsequence(before, after, played, lineAfter, color) : null;
+    const consequence = lineAfter
+      ? explainConsequence(before, after, played, lineAfter, color)
+      : null;
     const missed = top ? explainMissed(before, top, color, playedUci) : null;
     if (consequence) {
       text = consequence.text;

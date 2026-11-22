@@ -1,71 +1,82 @@
-import { Lightbulb, Loader2 } from "lucide-react";
+import { ArrowUpRight, Lightbulb, Loader2 } from "lucide-react";
 
-import { PieceImage, pieceName } from "@/components/chess/PieceImage";
+import { pieceName } from "@/components/chess/PieceImage";
+import { Button } from "@/components/ui/button";
+import type { HintLevel } from "@/lib/coach/hints";
 
 import type { HintMove } from "../types";
 
 interface HintBannerProps {
   hint: HintMove | null;
   pending: boolean;
+  onRequestLevel?: (level: HintLevel) => void;
 }
 
-/** Spells out the suggested move: which piece, from where, to where. */
-export function HintBanner({ hint, pending }: HintBannerProps) {
+const LEVEL_TITLES: Record<HintLevel, string> = {
+  1: "Уровень 1 · Стратегический ориентир",
+  2: "Уровень 2 · Тактическая подсказка",
+  3: "Уровень 3 · Лучший ход",
+};
+
+/** Displays progressive 3-level hints from subtle clue to full Stockfish best move. */
+export function HintBanner({ hint, pending, onRequestLevel }: HintBannerProps) {
   if (pending || !hint) {
     return (
       <div
         role="status"
         className="flex items-center gap-2 rounded-lg border border-border/70 bg-secondary/50 px-3 py-2.5 text-sm text-muted-foreground"
       >
-        <Loader2 className="size-4 animate-spin" /> Stockfish ищет лучший ход…
+        <Loader2 className="size-4 animate-spin text-primary" /> Stockfish ищет сильнейший план…
       </div>
     );
   }
 
   const piece = pieceName(hint.piece);
-  const extra = [
-    hint.captured ? `берёт ${pieceName(hint.captured)}` : null,
-    hint.promotion ? `превращение в ${promotionName(hint.promotion)}` : null,
-  ].filter(Boolean);
+  const text =
+    hint.level === 1 ? hint.level1Text : hint.level === 2 ? hint.level2Text : hint.level3Text;
 
   return (
     <div
       role="status"
       aria-live="polite"
-      className="flex items-center gap-3 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2.5"
+      className="space-y-2 rounded-lg border border-primary/40 bg-primary/10 px-3 py-2.5"
     >
-      <span className="relative grid size-9 shrink-0 place-items-center rounded-md bg-secondary">
-        <PieceImage
-          color={hint.piece === hint.piece ? "w" : "w"}
-          type={hint.piece}
-          className="hidden"
-        />
-        <Lightbulb className="size-4 text-warning" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Подсказка</p>
-        <p className="text-sm">
-          <span className="capitalize">{piece}</span>{" "}
-          <span className="font-mono">
-            {hint.from} → {hint.to}
-          </span>
-          {extra.length > 0 && <span className="text-muted-foreground"> · {extra.join(", ")}</span>}
-        </p>
+      <div className="flex items-start gap-2.5">
+        <span className="grid size-8 shrink-0 place-items-center rounded-md bg-secondary text-primary">
+          <Lightbulb className="size-4" aria-hidden />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-primary">
+              {LEVEL_TITLES[hint.level]}
+            </p>
+            {hint.level === 3 && (
+              <span className="font-mono text-sm font-semibold text-foreground">{hint.san}</span>
+            )}
+          </div>
+          <p className="mt-0.5 text-xs leading-relaxed text-foreground/95">{text}</p>
+          {hint.level === 2 && (
+            <p className="mt-1 font-mono text-[11px] text-muted-foreground">
+              Фигура: <span className="capitalize text-foreground">{piece}</span> на {hint.from}
+            </p>
+          )}
+        </div>
       </div>
-      <span className="font-mono text-base text-warning">{hint.san}</span>
+
+      {onRequestLevel && hint.level < 3 && (
+        <div className="flex items-center justify-end gap-1.5 border-t border-border/60 pt-2">
+          <Button
+            type="button"
+            variant="panel"
+            size="sm"
+            className="h-7 px-2.5 text-xs"
+            onClick={() => onRequestLevel((hint.level + 1) as HintLevel)}
+          >
+            <ArrowUpRight className="size-3.5" aria-hidden />
+            {hint.level === 1 ? "Тактическая подсказка (Ур. 2)" : "Показать лучший ход (Ур. 3)"}
+          </Button>
+        </div>
+      )}
     </div>
   );
-}
-
-function promotionName(piece: string): string {
-  switch (piece) {
-    case "q":
-      return "ферзя";
-    case "r":
-      return "ладью";
-    case "b":
-      return "слона";
-    default:
-      return "коня";
-  }
 }

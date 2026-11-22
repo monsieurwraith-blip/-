@@ -1,3 +1,6 @@
+import { User } from "lucide-react";
+
+import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   ANIMATION_SPEEDS,
@@ -42,6 +45,26 @@ export function DisplaySettingsPanel() {
 
   return (
     <div className="space-y-6">
+      <section>
+        <SectionTitle hint="Отображается в командном центре и на карточке игрока.">
+          Профиль игрока
+        </SectionTitle>
+        <div className="panel flex items-center gap-3 p-4">
+          <User className="size-4 shrink-0 text-primary" aria-hidden />
+          <label htmlFor="player-profile-name" className="text-sm font-medium">
+            Имя игрока
+          </label>
+          <Input
+            id="player-profile-name"
+            value={settings.playerName}
+            maxLength={28}
+            placeholder="Гроссмейстер"
+            onChange={(e) => update({ playerName: e.target.value })}
+            className="ml-auto h-9 max-w-[14rem] bg-secondary/70 text-sm"
+          />
+        </div>
+      </section>
+
       <section>
         <SectionTitle>Доска</SectionTitle>
         <div className="panel px-4">

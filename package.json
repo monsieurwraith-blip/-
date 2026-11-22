@@ -108,5 +108,5 @@
     "vite": "8.1.5",
     "vitest": "^4.1.10"
   },
-  "description": "CHESS STUDIO — шахматы против Stockfish (веб и Windows)"
+  "description": "ProChess — профессиональная шахматная платформа против Stockfish (веб и Windows)"
 }

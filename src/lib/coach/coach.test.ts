@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { classifyMove, formatEval, moveAccuracy, winPercent } from "./evaluation";
 import { analyzeMove, type AnalysisLine } from "./explain";
+import { buildLayeredHint } from "./hints";
 import { buildReport, type CoachRecord } from "./report";
 import { forkFrom, lineTactics, materialSwing } from "./tactics";
 
@@ -22,22 +23,36 @@ describe("move classification", () => {
   });
 
   it("the engine's top move is Best even with noisy scores", () => {
-    expect(classifyMove({ winBefore: 60, winAfter: 57, isTopMove: true, sacrifice: false })).toBe("best");
+    expect(classifyMove({ winBefore: 60, winAfter: 57, isTopMove: true, sacrifice: false })).toBe(
+      "best",
+    );
   });
 
   it("does not punish a move just for differing from the first line", () => {
-    expect(classifyMove({ winBefore: 60, winAfter: 59.5, isTopMove: false, sacrifice: false })).toBe("best");
-    expect(classifyMove({ winBefore: 60, winAfter: 56, isTopMove: false, sacrifice: false })).toBe("good");
+    expect(
+      classifyMove({ winBefore: 60, winAfter: 59.5, isTopMove: false, sacrifice: false }),
+    ).toBe("best");
+    expect(classifyMove({ winBefore: 60, winAfter: 56, isTopMove: false, sacrifice: false })).toBe(
+      "good",
+    );
   });
 
   it("grades bigger drops as inaccuracy, mistake and blunder", () => {
-    expect(classifyMove({ winBefore: 60, winAfter: 52, isTopMove: false, sacrifice: false })).toBe("inaccuracy");
-    expect(classifyMove({ winBefore: 60, winAfter: 46, isTopMove: false, sacrifice: false })).toBe("mistake");
-    expect(classifyMove({ winBefore: 60, winAfter: 30, isTopMove: false, sacrifice: false })).toBe("blunder");
+    expect(classifyMove({ winBefore: 60, winAfter: 52, isTopMove: false, sacrifice: false })).toBe(
+      "inaccuracy",
+    );
+    expect(classifyMove({ winBefore: 60, winAfter: 46, isTopMove: false, sacrifice: false })).toBe(
+      "mistake",
+    );
+    expect(classifyMove({ winBefore: 60, winAfter: 30, isTopMove: false, sacrifice: false })).toBe(
+      "blunder",
+    );
   });
 
   it("a sound sacrifice that keeps the best evaluation is Brilliant", () => {
-    expect(classifyMove({ winBefore: 55, winAfter: 56, isTopMove: true, sacrifice: true })).toBe("brilliant");
+    expect(classifyMove({ winBefore: 55, winAfter: 56, isTopMove: true, sacrifice: true })).toBe(
+      "brilliant",
+    );
   });
 
   it("accuracy is ~100 for no loss and falls with the loss", () => {
@@ -154,5 +169,23 @@ describe("game report", () => {
     expect(report.criticalMistakes).toHaveLength(1);
     expect(report.materialLost).toBe(3);
     expect(report.recommendations.length).toBeGreaterThan(0);
+  });
+});
+
+describe("3-level progressive hints", () => {
+  it("builds strategic focus, tactical clue, and best move text without spoiling level 1", () => {
+    const hint = buildLayeredHint(SCHOLAR, "h5f7", 1);
+    expect(hint).not.toBeNull();
+    expect(hint!.level).toBe(1);
+    expect(hint!.san).toBe("Qxf7#");
+    expect(hint!.from).toBe("h5");
+    expect(hint!.to).toBe("f7");
+    expect(hint!.level1Text).not.toContain("Qxf7");
+    expect(hint!.level2Text.length).toBeGreaterThan(10);
+    expect(hint!.level3Text).toContain("Qxf7#");
+  });
+
+  it("returns null for illegal UCI moves", () => {
+    expect(buildLayeredHint(AFTER_E4_E5, "e2e8", 1)).toBeNull();
   });
 });

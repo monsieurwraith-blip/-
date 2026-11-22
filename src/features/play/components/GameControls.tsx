@@ -1,8 +1,18 @@
-import { Flag, FlipVertical2, Lightbulb, Loader2, Plus, RotateCcw, Undo2 } from "lucide-react";
+import {
+  Flag,
+  FlipVertical2,
+  Lightbulb,
+  Loader2,
+  Plus,
+  Redo2,
+  RotateCcw,
+  Undo2,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import type { HintLevel } from "@/lib/coach/hints";
 
 import { ConfirmAction } from "./ConfirmAction";
 import { HintBanner } from "./HintBanner";
@@ -10,6 +20,7 @@ import type { HintMove } from "../types";
 
 interface GameControlsProps {
   canUndo: boolean;
+  canRedo: boolean;
   canHint: boolean;
   hintPending: boolean;
   hint: HintMove | null;
@@ -17,7 +28,8 @@ interface GameControlsProps {
   inProgress: boolean;
   showLegalMoves: boolean;
   onUndo: () => void;
-  onHint: () => void;
+  onRedo: () => void;
+  onHint: (level?: HintLevel) => void;
   onFlip: () => void;
   onRestart: () => void;
   onNewGame: () => void;
@@ -28,6 +40,7 @@ interface GameControlsProps {
 export function GameControls(props: GameControlsProps) {
   const {
     canUndo,
+    canRedo,
     canHint,
     hintPending,
     hint,
@@ -35,6 +48,7 @@ export function GameControls(props: GameControlsProps) {
     inProgress,
     showLegalMoves,
     onUndo,
+    onRedo,
     onHint,
     onFlip,
     onRestart,
@@ -45,28 +59,38 @@ export function GameControls(props: GameControlsProps) {
 
   return (
     <section className="panel space-y-3 p-3" aria-label="Управление партией">
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-5 gap-1.5">
         <Button
           variant="panel"
           size="tile"
           onClick={onUndo}
           disabled={!canUndo}
-          title="Отменить ваш последний ход"
+          title="Отменить последний ход"
         >
-          <Undo2 /> Отменить
+          <Undo2 /> Назад
         </Button>
         <Button
           variant="panel"
           size="tile"
-          onClick={onHint}
+          onClick={onRedo}
+          disabled={!canRedo}
+          title="Вернуть отменённый ход"
+        >
+          <Redo2 /> Повтор
+        </Button>
+        <Button
+          variant="panel"
+          size="tile"
+          onClick={() => onHint()}
           disabled={!canHint}
-          title="Stockfish покажет, куда лучше сходить"
+          title="Тренер и Stockfish: 3 уровня подсказки"
           aria-pressed={hint !== null}
         >
-          {hintPending ? <Loader2 className="animate-spin" /> : <Lightbulb />} Подсказка
+          {hintPending ? <Loader2 className="animate-spin" /> : <Lightbulb />}
+          {hint ? `Ур.${hint.level}` : "Подск."}
         </Button>
         <Button variant="panel" size="tile" onClick={onFlip} title="Перевернуть доску">
-          <FlipVertical2 /> Перевернуть
+          <FlipVertical2 /> Доска
         </Button>
         <ConfirmAction
           needsConfirm={inProgress}
@@ -80,7 +104,9 @@ export function GameControls(props: GameControlsProps) {
           </Button>
         </ConfirmAction>
       </div>
-      {(hint || hintPending) && <HintBanner hint={hint} pending={hintPending} />}
+      {(hint || hintPending) && (
+        <HintBanner hint={hint} pending={hintPending} onRequestLevel={(lvl) => onHint(lvl)} />
+      )}
       <div className="grid grid-cols-2 gap-2">
         <ConfirmAction
           needsConfirm={inProgress}
@@ -90,7 +116,7 @@ export function GameControls(props: GameControlsProps) {
           onConfirm={onRestart}
         >
           <Button variant="panel">
-            <RotateCcw /> Начать заново
+            <RotateCcw /> Реванш
           </Button>
         </ConfirmAction>
         <ConfirmAction
