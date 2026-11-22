@@ -1,0 +1,6 @@
+[
+  {"capability":"code","source":"chess-studio-main.zip","outcome":"migrate","status":"verified","next_action":"none"},
+  {"capability":"schema/records/auth","source":"none (frontend-only, settings in localStorage)","outcome":"not applicable","status":"verified","next_action":"none"},
+  {"capability":"stockfish engine (WASM worker)","source":"public/stockfish","outcome":"migrate","status":"verified","next_action":"none"},
+  {"capability":"external providers/secrets/webhooks","source":"none detected","outcome":"not applicable","status":"verified","next_action":"none"}
+]
