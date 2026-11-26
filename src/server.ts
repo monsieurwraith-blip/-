@@ -1,5 +1,9 @@
 import "./lib/error-capture";
 
+import fs from "node:fs";
+import path from "node:path";
+import { Readable } from "node:stream";
+
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
 
@@ -16,6 +20,21 @@ async function getServerEntry(): Promise<ServerEntry> {
     );
   }
   return serverEntryPromise;
+}
+
+function resolveExePath(): string | null {
+  const candidates = [
+    path.resolve(process.cwd(), "ProChess.exe"),
+    path.resolve(process.cwd(), "release", "ProChess Portable 1.0.0.exe"),
+  ];
+  for (const candidate of candidates) {
+    try {
+      if (fs.statSync(candidate).isFile()) return candidate;
+    } catch {
+      // try next candidate
+    }
+  }
+  return null;
 }
 
 // h3 swallows in-handler throws into a normal 500 Response with body
@@ -50,6 +69,32 @@ function isH3SwallowedErrorBody(body: string): boolean {
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     try {
+      const url = new URL(request.url);
+      if (
+        url.pathname === "/download/ProChess.exe" &&
+        (request.method === "GET" || request.method === "HEAD")
+      ) {
+        const exePath = resolveExePath();
+        if (!exePath) {
+          return new Response("ProChess.exe не найден на сервере.", {
+            status: 404,
+            headers: { "content-type": "text/plain; charset=utf-8" },
+          });
+        }
+        const stat = fs.statSync(exePath);
+        const headers = {
+          "content-type": "application/vnd.microsoft.portable-executable",
+          "content-disposition": 'attachment; filename="ProChess.exe"',
+          "content-length": String(stat.size),
+          "cache-control": "no-cache",
+        };
+        if (request.method === "HEAD") {
+          return new Response(null, { status: 200, headers });
+        }
+        const stream = Readable.toWeb(fs.createReadStream(exePath)) as ReadableStream<Uint8Array>;
+        return new Response(stream, { status: 200, headers });
+      }
+
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
       return await normalizeCatastrophicSsrResponse(response);

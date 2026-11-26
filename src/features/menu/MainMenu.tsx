@@ -7,6 +7,7 @@ import {
   Compass,
   Cpu,
   Crown,
+  Download,
   Flame,
   GraduationCap,
   Grid3X3,
@@ -373,9 +374,21 @@ export function MainMenu({
             </div>
           </nav>
 
-          <p className="animate-rise mt-5 font-mono text-[11px] tracking-wider text-muted-foreground/75">
-            STOCKFISH 19 WASM · РИСОВАНИЕ НА ДОСКЕ · CTRL + , НАСТРОЙКИ
-          </p>
+          <div className="animate-rise mt-5 flex flex-wrap items-center justify-between gap-2">
+            <p className="font-mono text-[11px] tracking-wider text-muted-foreground/75">
+              STOCKFISH 19 WASM · РИСОВАНИЕ НА ДОСКЕ · CTRL + , НАСТРОЙКИ
+            </p>
+            {typeof window === "undefined" || window.location.protocol !== "app:" ? (
+              <a
+                href="/download/ProChess.exe"
+                download="ProChess.exe"
+                className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-primary/40 bg-primary/12 px-3 py-1.5 text-xs font-semibold text-primary transition-colors hover:border-primary hover:bg-primary/20"
+              >
+                <Download className="size-3.5" aria-hidden />
+                Скачать ProChess.exe (Windows)
+              </a>
+            ) : null}
+          </div>
         </div>
 
         {/* Right Club Telemetry, Living Character & Summary Cards */}
