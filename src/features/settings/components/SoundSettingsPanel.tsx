@@ -1,10 +1,11 @@
-import { Play, Sliders, Volume1, Volume2, VolumeX } from "lucide-react";
+import { Bell, Music, Play, Sliders, Volume1, Volume2, VolumeX } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
-import type { SoundEvent } from "@/lib/settings/settings";
+import { SOUND_PACKS, type SoundEvent, type SoundPackId } from "@/lib/settings/settings";
 import type { SoundClip } from "@/lib/sound/gameSounds";
+import { cn } from "@/lib/utils";
 
 import { useSettings } from "../SettingsProvider";
 import { SectionTitle, SettingRow, SwitchRow } from "./SettingRow";
@@ -59,11 +60,11 @@ export function SoundSettingsPanel() {
       <section className="panel p-4">
         <SettingRow
           id="sound-enabled"
-          label="Звуковые эффекты"
-          description="Включает и отключает синтезированную акустику доски и интерфейса."
+          label="Звуковые эффекты (Master)"
+          description="Общий выключатель акустики ходов, интерфейса и уведомлений."
         >
           <span className="w-8 text-right font-mono text-xs text-muted-foreground" aria-hidden>
-            {sound.enabled ? "ON" : "OFF"}
+            {sound.enabled ? "ВКЛ" : "ВЫКЛ"}
           </span>
           <Switch
             id="sound-enabled"
@@ -74,7 +75,7 @@ export function SoundSettingsPanel() {
 
         <div className="setting-row">
           <Sliders className="size-4 shrink-0 text-primary" aria-hidden />
-          <div className="min-w-[8rem] text-xs text-foreground">Общая громкость</div>
+          <div className="min-w-[8.5rem] text-xs text-foreground">Общая громкость</div>
           <Slider
             aria-label="Общая громкость"
             value={[sound.masterVolume]}
@@ -92,9 +93,9 @@ export function SoundSettingsPanel() {
 
         <div className="setting-row" data-disabled={off}>
           <VolumeIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-          <div className="min-w-[8rem] text-xs text-muted-foreground">Громкость эффектов</div>
+          <div className="min-w-[8.5rem] text-xs text-muted-foreground">Громкость фигур</div>
           <Slider
-            aria-label="Громкость эффектов"
+            aria-label="Громкость фигур"
             value={[sound.volume]}
             min={0}
             max={100}
@@ -107,6 +108,83 @@ export function SoundSettingsPanel() {
           <span className="w-10 text-right font-mono text-xs tabular-nums text-muted-foreground">
             {sound.volume}%
           </span>
+        </div>
+
+        <div className="setting-row" data-disabled={off}>
+          <Music className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <div className="min-w-[8.5rem] text-xs text-muted-foreground">Громкость интерфейса</div>
+          <Slider
+            aria-label="Громкость интерфейса"
+            value={[sound.uiVolume]}
+            min={0}
+            max={100}
+            step={1}
+            disabled={off}
+            onValueChange={([v]) => update({ sound: { uiVolume: v ?? sound.uiVolume } })}
+            onValueCommit={() => preview("menu")}
+            className="flex-1"
+          />
+          <span className="w-10 text-right font-mono text-xs tabular-nums text-muted-foreground">
+            {sound.uiVolume}%
+          </span>
+        </div>
+
+        <div className="setting-row" data-disabled={off}>
+          <Bell className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+          <div className="min-w-[8.5rem] text-xs text-muted-foreground">Уведомления</div>
+          <Slider
+            aria-label="Громкость уведомлений"
+            value={[sound.notificationVolume]}
+            min={0}
+            max={100}
+            step={1}
+            disabled={off}
+            onValueChange={([v]) =>
+              update({ sound: { notificationVolume: v ?? sound.notificationVolume } })
+            }
+            onValueCommit={() => preview("achievement")}
+            className="flex-1"
+          />
+          <span className="w-10 text-right font-mono text-xs tabular-nums text-muted-foreground">
+            {sound.notificationVolume}%
+          </span>
+        </div>
+      </section>
+
+      <section>
+        <SectionTitle hint="5 синтезированных звуковых наборов для ходов и интерфейса.">
+          Звуковые наборы
+        </SectionTitle>
+        <div
+          role="radiogroup"
+          aria-label="Звуковой набор"
+          className="grid grid-cols-1 gap-2 sm:grid-cols-2"
+        >
+          {SOUND_PACKS.map((pack) => {
+            const selected = sound.soundPack === pack.id;
+            return (
+              <button
+                key={pack.id}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                disabled={off}
+                onClick={() => {
+                  update({ sound: { soundPack: pack.id as SoundPackId } });
+                  window.setTimeout(() => preview("move"), 20);
+                }}
+                className={cn(
+                  "flex flex-col items-start gap-0.5 rounded-lg border px-3 py-2.5 text-left transition-colors",
+                  selected
+                    ? "border-primary/70 bg-primary/15 text-foreground"
+                    : "border-border bg-secondary/60 text-foreground/85 hover:bg-accent",
+                )}
+              >
+                <span className="text-sm font-medium">{pack.label}</span>
+                <span className="text-xs text-muted-foreground">{pack.description}</span>
+              </button>
+            );
+          })}
         </div>
       </section>
 

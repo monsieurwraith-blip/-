@@ -1,7 +1,9 @@
 /**
  * Sound effects synthesized with the Web Audio API — no audio files, works offline
- * in the browser and the desktop app. One shared AudioContext, created lazily.
+ * in the browser and the desktop app. Supports 5 selectable ProChess sound packs.
  */
+import type { SoundPackId } from "@/lib/settings/settings";
+
 import type { SoundClip } from "./gameSounds";
 
 let ctx: AudioContext | null = null;
@@ -27,33 +29,52 @@ function noise(ac: AudioContext): AudioBuffer {
   return buf;
 }
 
-/** Short wooden "tok": filtered noise click + a low body thump. */
-function tap(ac: AudioContext, out: AudioNode, at: number, gain: number, pitch: number) {
+/** Short wooden/metallic tap depending on pack. */
+function tap(
+  ac: AudioContext,
+  out: AudioNode,
+  at: number,
+  gain: number,
+  pitch: number,
+  pack: SoundPackId,
+) {
+  const packPitch =
+    pack === "metal"
+      ? pitch * 1.65
+      : pack === "soft"
+        ? pitch * 0.65
+        : pack === "minimal"
+          ? pitch * 1.15
+          : pack === "premium"
+            ? pitch * 0.92
+            : pitch;
+
   const src = ac.createBufferSource();
   src.buffer = noise(ac);
   const band = ac.createBiquadFilter();
   band.type = "bandpass";
-  band.frequency.value = pitch;
-  band.Q.value = 1.4;
+  band.frequency.value = packPitch;
+  band.Q.value = pack === "metal" ? 5.2 : pack === "soft" ? 0.9 : 1.5;
   const g = ac.createGain();
+  const len = pack === "minimal" ? 0.032 : pack === "soft" ? 0.075 : 0.06;
   g.gain.setValueAtTime(0, at);
   g.gain.linearRampToValueAtTime(gain, at + 0.002);
-  g.gain.exponentialRampToValueAtTime(0.0008, at + 0.06);
+  g.gain.exponentialRampToValueAtTime(0.0008, at + len);
   src.connect(band).connect(g).connect(out);
   src.start(at);
-  src.stop(at + 0.08);
+  src.stop(at + len + 0.02);
 
   const body = ac.createOscillator();
-  body.type = "sine";
-  body.frequency.setValueAtTime(pitch / 9, at);
-  body.frequency.exponentialRampToValueAtTime(pitch / 18, at + 0.08);
+  body.type = pack === "metal" ? "triangle" : "sine";
+  body.frequency.setValueAtTime(packPitch / (pack === "metal" ? 4.2 : 9), at);
+  body.frequency.exponentialRampToValueAtTime(packPitch / 18, at + 0.08);
   const bg = ac.createGain();
   bg.gain.setValueAtTime(0, at);
-  bg.gain.linearRampToValueAtTime(gain * 0.9, at + 0.003);
-  bg.gain.exponentialRampToValueAtTime(0.0008, at + 0.09);
+  bg.gain.linearRampToValueAtTime(gain * (pack === "minimal" ? 0.55 : 0.9), at + 0.003);
+  bg.gain.exponentialRampToValueAtTime(0.0008, at + (pack === "premium" ? 0.12 : 0.09));
   body.connect(bg).connect(out);
   body.start(at);
-  body.stop(at + 0.1);
+  body.stop(at + 0.13);
 }
 
 function tone(
@@ -77,38 +98,75 @@ function tone(
   osc.stop(at + duration + 0.02);
 }
 
-/** Plays a clip at volume 0–100. Silently does nothing where Web Audio is unavailable. */
-export function playClip(clip: SoundClip, volume: number): void {
+/** Plays a clip at volume 0–100 using the selected ProChess sound pack. */
+export function playClip(clip: SoundClip, volume: number, pack: SoundPackId = "wood"): void {
   const ac = context();
   if (!ac || volume <= 0) return;
   const master = ac.createGain();
-  // Perceptual curve: small slider values stay quiet.
-  master.gain.value = Math.pow(Math.max(0, Math.min(100, volume)) / 100, 1.6) * 0.85;
+  const packMul =
+    pack === "soft" ? 0.72 : pack === "minimal" ? 0.65 : pack === "premium" ? 0.95 : 0.85;
+  master.gain.value = Math.pow(Math.max(0, Math.min(100, volume)) / 100, 1.6) * packMul;
   master.connect(ac.destination);
   const t = ac.currentTime + 0.005;
 
   switch (clip) {
     case "move":
-      tap(ac, master, t, 0.9, 1700);
+      tap(ac, master, t, 0.9, 1700, pack);
       break;
     case "capture":
-      tap(ac, master, t, 0.75, 2300);
-      tap(ac, master, t + 0.045, 1, 1500);
+      tap(ac, master, t, 0.75, 2300, pack);
+      tap(ac, master, t + 0.045, 1, 1500, pack);
       break;
     case "check":
-      tap(ac, master, t, 0.7, 1700);
+      tap(ac, master, t, 0.7, 1700, pack);
       tone(ac, master, t + 0.02, 880, 0.16, 0.22, "sine");
       tone(ac, master, t + 0.11, 1174.7, 0.22, 0.2, "sine");
       break;
     case "checkmate":
-      tap(ac, master, t, 0.85, 1500);
+      tap(ac, master, t, 0.85, 1500, pack);
       tone(ac, master, t + 0.02, 587.33, 0.28, 0.22, "triangle");
       tone(ac, master, t + 0.12, 880, 0.45, 0.24, "sine");
       break;
-    case "menu":
-      tone(ac, master, t, 740, 0.055, 0.09, "sine");
-      tone(ac, master, t + 0.02, 1110, 0.06, 0.05, "sine");
+    case "mistake":
+      tone(ac, master, t, 293.66, 0.16, 0.16, "sawtooth");
+      tone(ac, master, t + 0.11, 220, 0.22, 0.14, "triangle");
       break;
+    case "achievement":
+      [587.33, 739.99, 880, 1174.66].forEach((f, i) =>
+        tone(ac, master, t + i * 0.08, f, 0.35, 0.18, "sine"),
+      );
+      break;
+    case "menu": {
+      // Soft, deep, damped mechanical button "thock" — warm low-passed body, zero harsh highs
+      const baseFreq =
+        pack === "metal" ? 245 : pack === "soft" ? 160 : pack === "minimal" ? 190 : 205;
+      const noiseSrc = ac.createBufferSource();
+      noiseSrc.buffer = noise(ac);
+      const lpf = ac.createBiquadFilter();
+      lpf.type = "lowpass";
+      lpf.frequency.value = pack === "metal" ? 1050 : pack === "soft" ? 580 : 780;
+      lpf.Q.value = 0.7;
+      const ng = ac.createGain();
+      ng.gain.setValueAtTime(0, t);
+      ng.gain.linearRampToValueAtTime(0.16, t + 0.002);
+      ng.gain.exponentialRampToValueAtTime(0.0008, t + 0.022);
+      noiseSrc.connect(lpf).connect(ng).connect(master);
+      noiseSrc.start(t);
+      noiseSrc.stop(t + 0.03);
+
+      const thock = ac.createOscillator();
+      thock.type = "sine";
+      thock.frequency.setValueAtTime(baseFreq, t);
+      thock.frequency.exponentialRampToValueAtTime(baseFreq * 0.48, t + 0.036);
+      const tg = ac.createGain();
+      tg.gain.setValueAtTime(0, t);
+      tg.gain.linearRampToValueAtTime(0.24, t + 0.0025);
+      tg.gain.exponentialRampToValueAtTime(0.0008, t + 0.042);
+      thock.connect(tg).connect(master);
+      thock.start(t);
+      thock.stop(t + 0.05);
+      break;
+    }
     case "gameEnd":
       for (const f of [392, 523.25, 659.25]) tone(ac, master, t, f, 0.9, 0.12);
       break;

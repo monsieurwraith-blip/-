@@ -1,5 +1,5 @@
 import type { Move } from "chess.js";
-import { ChevronFirst, ChevronLast, ChevronLeft, ChevronRight } from "lucide-react";
+import { BookOpen, ChevronFirst, ChevronLast, ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useRef } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { cn } from "@/lib/utils";
 
 interface MoveListProps {
   history: readonly Move[];
+  openingLabel?: string | null;
   coachRecords?: readonly CoachRecord[];
   viewPly?: number | null;
   onInspectPly?: (ply: number | null) => void;
@@ -18,6 +19,7 @@ interface MoveListProps {
 
 export function MoveList({
   history,
+  openingLabel = null,
   coachRecords,
   viewPly = null,
   onInspectPly,
@@ -109,6 +111,17 @@ export function MoveList({
           </div>
         )}
       </header>
+      {openingLabel && (
+        <div
+          className="flex items-center gap-2 border-b border-border/75 bg-secondary/45 px-4 py-1.5 text-xs"
+          data-testid="eco-opening-label"
+        >
+          <BookOpen className="size-3.5 shrink-0 text-primary" aria-hidden />
+          <span className="truncate font-mono text-[11px] font-medium text-foreground/95">
+            {openingLabel}
+          </span>
+        </div>
+      )}
       <div className="grid grid-cols-[2.75rem_1fr_1fr] border-b border-border px-2 py-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
         <span className="pl-2">#</span>
         <span className="px-2">Белые</span>

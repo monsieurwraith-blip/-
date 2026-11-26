@@ -113,7 +113,10 @@ function dispatchUtterance(
   ignoreEnabled: boolean,
 ): boolean {
   if (!isSpeechSupported()) return false;
-  if (!ignoreEnabled && (!voiceSettings.enabled || masterVolume <= 0 || voiceSettings.volume <= 0)) {
+  if (
+    !ignoreEnabled &&
+    (!voiceSettings.enabled || masterVolume <= 0 || voiceSettings.volume <= 0)
+  ) {
     return false;
   }
 
@@ -168,9 +171,6 @@ export function repeatLastCoachPhrase(
   return dispatchUtterance(lastSpokenText, voiceSettings, masterVolume, true);
 }
 
-export function previewCoachVoice(
-  voiceSettings: VoiceCoachSettings,
-  masterVolume = 100,
-): boolean {
+export function previewCoachVoice(voiceSettings: VoiceCoachSettings, masterVolume = 100): boolean {
   return dispatchUtterance(VOICE_TEST_PHRASE, voiceSettings, masterVolume, true);
 }

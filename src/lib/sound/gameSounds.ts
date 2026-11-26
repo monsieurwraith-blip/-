@@ -12,7 +12,9 @@ export type SoundClip =
   | "gameEnd"
   | "win"
   | "loss"
-  | "menu";
+  | "menu"
+  | "mistake"
+  | "achievement";
 
 export interface MoveLike {
   san: string;
@@ -35,7 +37,7 @@ export function clipForOutcome(outcome: GameOutcome, playerColor: Color): SoundC
 
 /** Settings toggle that controls a clip. */
 export function eventForClip(clip: SoundClip): SoundEvent {
-  if (clip === "win" || clip === "loss") return "result";
-  if (clip === "checkmate") return "check";
+  if (clip === "win" || clip === "loss" || clip === "achievement") return "result";
+  if (clip === "checkmate" || clip === "mistake") return "check";
   return clip;
 }

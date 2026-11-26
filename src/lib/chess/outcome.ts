@@ -10,7 +10,8 @@ export type GameOutcome =
   | { type: "stalemate" }
   | { type: "insufficient-material" }
   | { type: "threefold-repetition" }
-  | { type: "fifty-move-rule" };
+  | { type: "fifty-move-rule" }
+  | { type: "agreement" };
 
 /** Endings that follow from the position itself (everything chess.js can detect). */
 export function detectBoardOutcome(chess: Chess): GameOutcome | null {
@@ -83,6 +84,8 @@ export function outcomeReason(outcome: GameOutcome): string {
       return "Троекратное повторение позиции";
     case "fifty-move-rule":
       return "Правило 50 ходов";
+    case "agreement":
+      return "Ничья по соглашению сторон";
   }
 }
 

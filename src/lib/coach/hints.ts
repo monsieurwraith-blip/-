@@ -8,13 +8,7 @@ import { Chess, type Move, type PieceSymbol, type Square } from "chess.js";
 
 import { opposite } from "@/lib/chess/types";
 import { describeIdea } from "@/lib/coach/explain";
-import {
-  forkFrom,
-  hangingPieces,
-  lineTactics,
-  pieceWord,
-  playUci,
-} from "@/lib/coach/tactics";
+import { forkFrom, hangingPieces, lineTactics, pieceWord, playUci } from "@/lib/coach/tactics";
 
 export type HintLevel = 1 | 2 | 3;
 

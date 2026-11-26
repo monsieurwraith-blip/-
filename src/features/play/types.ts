@@ -5,11 +5,13 @@ import type { GameSetupSettings } from "@/lib/settings/settings";
 /** Setup of a game (mode, side, difficulty, clock) — persisted in the user settings. */
 export type GameSettings = GameSetupSettings;
 
-/** A started game: the settings it was created with and the resolved player color. */
+/** A started game: the settings it was created with, resolved player color, and optional custom FEN. */
 export interface ActiveGame {
   id: number;
   settings: GameSettings;
   playerColor: Color;
+  startFen?: string | null;
+  drillLabel?: string | null;
 }
 
 /** Progressive 3-level hint suggested by Stockfish + chess.js geometry. */

@@ -207,8 +207,7 @@ export function lineTactics(chess: Chess, square: Square): LineTactic[] {
   const piece = chess.get(square);
   if (!piece || !["b", "r", "q"].includes(piece.type)) return [];
   const enemy = opposite(piece.color);
-  const dirs =
-    piece.type === "q" ? [...DIRS.r, ...DIRS.b] : piece.type === "r" ? DIRS.r : DIRS.b;
+  const dirs = piece.type === "q" ? [...DIRS.r, ...DIRS.b] : piece.type === "r" ? DIRS.r : DIRS.b;
   const f0 = square.charCodeAt(0) - 97;
   const r0 = Number(square[1]) - 1;
   const out: LineTactic[] = [];

@@ -36,7 +36,13 @@ export interface SearchResult {
   cancelled: boolean;
 }
 
-const CANCELLED: SearchResult = { bestMove: null, ponder: null, info: null, lines: [], cancelled: true };
+const CANCELLED: SearchResult = {
+  bestMove: null,
+  ponder: null,
+  info: null,
+  lines: [],
+  cancelled: true,
+};
 
 interface ActiveSearch {
   generation: number;
@@ -147,7 +153,8 @@ export class StockfishEngine {
           reject,
         };
         this.send(position);
-        const depth = request.depth === null ? "" : ` depth ${Math.max(1, Math.round(request.depth))}`;
+        const depth =
+          request.depth === null ? "" : ` depth ${Math.max(1, Math.round(request.depth))}`;
         this.send(`go movetime ${Math.max(10, Math.round(request.movetimeMs))}${depth}`);
       });
     });

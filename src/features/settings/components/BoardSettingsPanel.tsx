@@ -2,6 +2,8 @@ import { Check, Palette } from "lucide-react";
 import { useState, type CSSProperties } from "react";
 
 import { PieceImage } from "@/components/chess/PieceImage";
+import { Switch } from "@/components/ui/switch";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   BOARD_CATEGORY_LABEL,
   BOARD_THEMES,
@@ -10,10 +12,18 @@ import {
   type BoardThemeId,
 } from "@/lib/appearance/themes";
 import { UI_THEMES, type UiThemeId } from "@/lib/appearance/uiThemes";
+import {
+  ARROW_STYLES,
+  BOARD_FRAME_STYLES,
+  BOARD_SCALES,
+  type ArrowStyle,
+  type BoardFrameStyle,
+  type BoardScale,
+} from "@/lib/settings/settings";
 import { cn } from "@/lib/utils";
 
 import { useSettings } from "../SettingsProvider";
-import { SectionTitle } from "./SettingRow";
+import { SectionTitle, SettingRow } from "./SettingRow";
 
 type CategoryFilter = "all" | BoardThemeCategory;
 
@@ -77,10 +87,11 @@ function ThemeCard({
 }
 
 export function BoardSettingsPanel() {
-  const { settings, update } = useSettings();
+  const { settings, update, updateBoard } = useSettings();
   const [category, setCategory] = useState<CategoryFilter>("all");
   const select = (boardTheme: BoardThemeId) => update({ boardTheme });
   const custom = settings.customBoard;
+  const board = settings.board;
 
   const visibleThemes =
     category === "all" ? BOARD_THEMES : BOARD_THEMES.filter((t) => t.category === category);
@@ -129,15 +140,15 @@ export function BoardSettingsPanel() {
       </section>
 
       <section>
-        <SectionTitle hint="4 категории отделки: дерево, металлы, мрамор и спецэффекты.">
-          Темы доски
+        <SectionTitle hint="4 категории отделки: дерево, мрамор, металлы и спецэффекты.">
+          Темы доски ({BOARD_THEMES.length})
         </SectionTitle>
         <div
           className="mb-3 flex flex-wrap gap-1.5"
           role="tablist"
           aria-label="Категории тем доски"
         >
-          {(["all", "classic", "metal", "luxury", "special"] as const).map((cat) => (
+          {(["all", "classic", "luxury", "metal", "special"] as const).map((cat) => (
             <button
               key={cat}
               type="button"
@@ -183,8 +194,66 @@ export function BoardSettingsPanel() {
       </section>
 
       <section>
-        <SectionTitle hint="Изменение цвета включает тему Custom.">Свои цвета клеток</SectionTitle>
-        <div className="panel flex flex-wrap items-center gap-x-6 gap-y-3 p-4">
+        <SectionTitle hint="Настройка рамки, размера, стрелок и подсветки клеток.">
+          Детализация и подсветка доски
+        </SectionTitle>
+        <div className="panel space-y-1 px-4 py-1">
+          <SettingRow id="frame-style" label="Стиль рамки" description="Обрамление шахматной доски">
+            <ToggleGroup
+              id="frame-style"
+              type="single"
+              variant="segment"
+              size="sm"
+              value={board.frameStyle}
+              onValueChange={(v) => v && update({ board: { frameStyle: v as BoardFrameStyle } })}
+              className="rounded-lg border border-border bg-secondary p-0.5"
+            >
+              {BOARD_FRAME_STYLES.map((f) => (
+                <ToggleGroupItem key={f.id} value={f.id} className="px-2.5 text-xs">
+                  {f.label}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </SettingRow>
+
+          <SettingRow id="arrow-style" label="Стиль стрелок" description="Подсказки, угрозы и идеи">
+            <ToggleGroup
+              id="arrow-style"
+              type="single"
+              variant="segment"
+              size="sm"
+              value={board.arrowStyle}
+              onValueChange={(v) => v && update({ board: { arrowStyle: v as ArrowStyle } })}
+              className="rounded-lg border border-border bg-secondary p-0.5"
+            >
+              {ARROW_STYLES.map((a) => (
+                <ToggleGroupItem key={a.id} value={a.id} className="px-2.5 text-xs">
+                  {a.label}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </SettingRow>
+
+          <SettingRow id="board-scale" label="Размер доски" description="Масштаб игровой области">
+            <ToggleGroup
+              id="board-scale"
+              type="single"
+              variant="segment"
+              size="sm"
+              value={board.boardScale}
+              onValueChange={(v) => v && update({ board: { boardScale: v as BoardScale } })}
+              className="rounded-lg border border-border bg-secondary p-0.5"
+            >
+              {BOARD_SCALES.map((s) => (
+                <ToggleGroupItem key={s.id} value={s.id} className="px-2.5 text-xs">
+                  {s.label.split(" ")[0]}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </SettingRow>
+        </div>
+
+        <div className="panel mt-3 flex flex-wrap items-center gap-x-6 gap-y-3 p-4">
           <Palette className="size-4 text-muted-foreground" aria-hidden />
           <ColorField
             id="custom-light"
@@ -198,6 +267,98 @@ export function BoardSettingsPanel() {
             value={custom.dark}
             onChange={(dark) => update({ boardTheme: "custom", customBoard: { dark } })}
           />
+          <ColorField
+            id="selected-color"
+            label="Выбранная клетка"
+            value={board.selectedColor}
+            onChange={(selectedColor) => update({ board: { selectedColor } })}
+          />
+          <ColorField
+            id="legal-color"
+            label="Возможные ходы"
+            value={board.legalMoveColor}
+            onChange={(legalMoveColor) => update({ board: { legalMoveColor } })}
+          />
+          <ColorField
+            id="check-color"
+            label="Подсветка шаха"
+            value={board.checkColor}
+            onChange={(checkColor) => update({ board: { checkColor } })}
+          />
+        </div>
+      </section>
+
+      <section>
+        <SectionTitle hint="Рисование стрелок правой кнопкой, живой персонаж и тактические подсказки на доске.">
+          Рисование, персонаж и тактика
+        </SectionTitle>
+        <div className="panel space-y-1 px-4 py-1">
+          <SettingRow
+            id="board-autoclear-drawings"
+            label="Автоочистка рисунков после хода"
+            description="Автоматически убирать пользовательские стрелки и выделения клеток при следующем ходе"
+          >
+            <Switch
+              id="board-autoclear-drawings"
+              checked={board.autoClearDrawings}
+              onCheckedChange={(autoClearDrawings) => updateBoard({ autoClearDrawings })}
+            />
+          </SettingRow>
+          <SettingRow
+            id="board-show-character"
+            label="Персонаж рядом с доской"
+            description="Показывать живую карточку выбранного персонажа PROCHESS во время партии"
+          >
+            <Switch
+              id="board-show-character"
+              checked={board.showCharacterInGame}
+              onCheckedChange={(showCharacterInGame) => updateBoard({ showCharacterInGame })}
+            />
+          </SettingRow>
+          <SettingRow
+            id="board-show-threats"
+            label="Подсветка угроз на доске"
+            description="Отмечать атакуемые, незащищённые и защищённые фигуры на текущей позиции"
+          >
+            <Switch
+              id="board-show-threats"
+              checked={board.showThreatOverlay}
+              onCheckedChange={(showThreatOverlay) => updateBoard({ showThreatOverlay })}
+            />
+          </SettingRow>
+          <SettingRow
+            id="board-show-combos"
+            label="Визуализация комбинаций"
+            description="Подсвечивать тактические удары, шахи и потенциальные вилки"
+          >
+            <Switch
+              id="board-show-combos"
+              checked={board.showComboOverlay}
+              onCheckedChange={(showComboOverlay) => updateBoard({ showComboOverlay })}
+            />
+          </SettingRow>
+          <SettingRow
+            id="board-premoves"
+            label="Премувы (Premoves)"
+            description="Заранее планировать следующий ход во время раздумий Stockfish"
+          >
+            <Switch
+              id="board-premoves"
+              checked={board.premovesEnabled}
+              onCheckedChange={(premovesEnabled) => updateBoard({ premovesEnabled })}
+            />
+          </SettingRow>
+          <SettingRow
+            id="board-auto-flip-pnp"
+            label="Автопереворот вдвоём"
+            description="Автоматически поворачивать доску к активному игроку за одним экраном"
+          >
+            <Switch
+              id="board-auto-flip-pnp"
+              checked={board.autoFlipPassAndPlay}
+              onCheckedChange={(autoFlipPassAndPlay) => updateBoard({ autoFlipPassAndPlay })}
+            />
+          </SettingRow>
         </div>
       </section>
     </div>

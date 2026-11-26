@@ -13,6 +13,8 @@ interface GameStatusCardProps {
   playerColor: Color;
   engineThinking: boolean;
   clockWaiting: boolean;
+  isPassAndPlay?: boolean;
+  opponentLabel?: string;
 }
 
 export function GameStatusCard({
@@ -23,6 +25,8 @@ export function GameStatusCard({
   playerColor,
   engineThinking,
   clockWaiting,
+  isPassAndPlay = false,
+  opponentLabel = "Stockfish",
 }: GameStatusCardProps) {
   if (outcome) {
     return (
@@ -61,11 +65,19 @@ export function GameStatusCard({
         <h2 className="text-lg font-medium">{turn === "w" ? "Ход белых" : "Ход чёрных"}</h2>
         {engineThinking ? (
           <span className="flex items-center gap-1.5 text-sm font-medium text-primary">
-            · <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden /> Бот думает…
+            · <Loader2 className="size-3.5 shrink-0 animate-spin" aria-hidden /> {opponentLabel}{" "}
+            думает…
           </span>
         ) : (
           <span className="text-sm text-muted-foreground">
-            · {yourTurn ? "ваш ход" : "ход Stockfish"}
+            ·{" "}
+            {isPassAndPlay
+              ? turn === "w"
+                ? "Игрок 1"
+                : "Игрок 2"
+              : yourTurn
+                ? "ваш ход"
+                : `ход ${opponentLabel}`}
           </span>
         )}
       </div>

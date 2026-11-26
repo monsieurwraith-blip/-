@@ -5,7 +5,7 @@ import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const toggleVariants = cva(
-  "inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium cursor-pointer transition-colors hover:bg-muted hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 disabled:cursor-not-allowed data-[state=on]:bg-accent data-[state=on]:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex items-center justify-center gap-2 rounded-lg text-sm font-semibold cursor-pointer transition-all duration-150 active:scale-[0.98] hover:bg-muted hover:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 disabled:cursor-not-allowed data-[state=on]:bg-accent data-[state=on]:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
@@ -13,12 +13,12 @@ const toggleVariants = cva(
         outline:
           "border border-input bg-transparent shadow-sm hover:bg-accent hover:text-accent-foreground",
         segment:
-          "flex-1 text-muted-foreground hover:bg-accent hover:text-foreground data-[state=on]:bg-ivory data-[state=on]:text-ivory-foreground data-[state=on]:shadow-sm",
+          "flex-1 text-muted-foreground hover:bg-accent/70 hover:text-foreground data-[state=on]:bg-[linear-gradient(180deg,#ffffff_0%,var(--ivory)_100%)] data-[state=on]:text-ivory-foreground data-[state=on]:shadow-[inset_0_1px_0_rgba(255,255,255,0.9),0_2px_6px_-2px_rgba(0,0,0,0.45)]",
       },
       size: {
-        default: "h-9 px-2 min-w-9",
-        sm: "h-8 px-1.5 min-w-8",
-        lg: "h-10 px-2.5 min-w-10",
+        default: "h-9 px-2.5 min-w-9",
+        sm: "h-8 px-2 min-w-8",
+        lg: "h-10 px-3 min-w-10",
       },
     },
     defaultVariants: {

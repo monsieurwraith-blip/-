@@ -1,24 +1,53 @@
 import { Chess, type Move } from "chess.js";
-import { Cpu, FlipVertical2, Loader2, RotateCcw, Sparkles, Undo2, Upload } from "lucide-react";
+import {
+  Activity,
+  Check,
+  Compass,
+  Copy,
+  Cpu,
+  Download,
+  FlipVertical2,
+  Loader2,
+  RotateCcw,
+  Sparkles,
+  Undo2,
+  Upload,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { BoardDrawToolbar } from "@/components/chess/BoardDrawToolbar";
 import { ChessBoard, type BoardArrow } from "@/components/chess/ChessBoard";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AnalyticsPanel } from "@/features/play/components/AnalyticsPanel";
 import { EvalBar } from "@/features/play/components/EvalBar";
 import { MoveList } from "@/features/play/components/MoveList";
+import { useProgression } from "@/features/progression/ProgressionProvider";
 import { useSettings } from "@/features/settings/SettingsProvider";
+import { useBoardDrawings } from "@/hooks/useBoardDrawings";
 import { useStockfish } from "@/hooks/useStockfish";
+import { detectOpening } from "@/lib/chess/openings";
 import type { BoardCell } from "@/lib/chess/pieceIds";
 import type { BoardMove, Color, Square, SquarePair } from "@/lib/chess/types";
 import { parseUciMove, type EngineInfo, type EngineScore } from "@/lib/chess/uci";
+import {
+  analyzePositionStructure,
+  findTurningPoint,
+  formatDecimalEval,
+  type TurningPointResult,
+} from "@/lib/coach/advisor";
 import { chartPawns, formatEval, toWhitePov } from "@/lib/coach/evaluation";
 import type { EvalPoint } from "@/lib/coach/report";
-import { playUci, pvToSan } from "@/lib/coach/tactics";
+import { pvToSan } from "@/lib/coach/tactics";
 import { STOCKFISH_BUILD_LABEL } from "@/lib/engine/config";
+import { triggerFileDownload } from "@/lib/progression/storage";
+import {
+  ANALYSIS_DEPTHS,
+  effectiveSoundVolume,
+  soundAllowed,
+  type AnalysisDepth,
+} from "@/lib/settings/settings";
 import { playClip } from "@/lib/sound/synth";
-import { effectiveSoundVolume, soundAllowed } from "@/lib/settings/settings";
 import { cn } from "@/lib/utils";
 
 interface BoardViewState {
@@ -54,7 +83,6 @@ function readBoardState(
       ...(m.promotion ? { promotion: m.promotion } : {}),
     });
   }
-  // Support custom FEN bases when loaded directly.
   const targetChess = viewPly === null || targetPly === fullHistory.length ? chess : clone;
 
   const turn = targetChess.turn();
@@ -86,20 +114,28 @@ function readBoardState(
   };
 }
 
+interface AnalysisScreenProps {
+  initialInput?: string | null;
+}
+
 /**
  * Dedicated ProChess Analysis Lab:
- * move both sides freely, load any FEN/PGN, navigate move history,
- * and run live MultiPV=3 Stockfish evaluation with best-move arrows.
+ * move both sides freely, load any FEN/PGN, step through history,
+ * view WDL probabilities, structural positional telemetry, MultiPV=3 lines,
+ * turning point detector, and PGN export.
  */
-export function AnalysisScreen() {
+export function AnalysisScreen({ initialInput = null }: AnalysisScreenProps) {
   const chessRef = useRef(new Chess());
   const engine = useStockfish();
-  const { settings } = useSettings();
+  const { settings, update } = useSettings();
+  const { completeErrorAnalysis } = useProgression();
   const [version, setVersion] = useState(0);
   const [viewPly, setViewPly] = useState<number | null>(null);
   const [orientation, setOrientation] = useState<Color>("w");
   const [fenDraft, setFenDraft] = useState("");
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [copiedKey, setCopiedKey] = useState<"fen" | "pgn" | null>(null);
+  const [turningPoint, setTurningPoint] = useState<TurningPointResult | null>(null);
   const [analysisResult, setAnalysisResult] = useState<{
     fen: string;
     score: EngineScore;
@@ -108,6 +144,39 @@ export function AnalysisScreen() {
     turn: Color;
   } | null>(null);
   const [evalPoints, setEvalPoints] = useState<EvalPoint[]>([]);
+  const [loadedStartFen, setLoadedStartFen] = useState<string | null>(null);
+
+  const loadRawIntoBoard = useCallback((rawText: string) => {
+    const raw = rawText.trim();
+    if (!raw) return false;
+    const next = new Chess();
+    try {
+      const isFen = raw.split(" ").length >= 4 && raw.includes("/") && !raw.includes("\n1.");
+      if (isFen) {
+        next.load(raw);
+        setLoadedStartFen(raw);
+      } else {
+        next.loadPgn(raw);
+        setLoadedStartFen(null);
+      }
+      chessRef.current = next;
+      setEvalPoints([]);
+      setAnalysisResult(null);
+      setTurningPoint(null);
+      setViewPly(null);
+      setLoadError(null);
+      setVersion((v) => v + 1);
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (initialInput) {
+      loadRawIntoBoard(initialInput);
+    }
+  }, [initialInput, loadRawIntoBoard]);
 
   const state = useMemo(() => {
     void version;
@@ -115,16 +184,17 @@ export function AnalysisScreen() {
   }, [version, viewPly]);
 
   const { fullHistory, activeBoard, lastMove, activePly } = state;
+  const drawing = useBoardDrawings(`${activeBoard.fen}-${activePly}`);
 
   const bump = useCallback(() => {
     setViewPly(null);
     setLoadError(null);
+    setTurningPoint(null);
     setVersion((v) => v + 1);
   }, []);
 
   const handleMove = useCallback(
     (move: BoardMove): boolean => {
-      // If inspecting an earlier ply, trim future moves to branch cleanly from there.
       if (viewPly !== null && viewPly < chessRef.current.history().length) {
         const trim = chessRef.current.history().length - viewPly;
         for (let i = 0; i < trim; i++) chessRef.current.undo();
@@ -134,7 +204,7 @@ export function AnalysisScreen() {
         if (!played) return false;
         const ev = played.isCapture() ? "capture" : chessRef.current.inCheck() ? "check" : "move";
         if (soundAllowed(settings.sound, ev)) {
-          playClip(ev, effectiveSoundVolume(settings.sound));
+          playClip(ev, effectiveSoundVolume(settings.sound), settings.sound.soundPack);
         }
         bump();
         return true;
@@ -153,8 +223,10 @@ export function AnalysisScreen() {
 
   const handleReset = useCallback(() => {
     chessRef.current = new Chess();
+    setLoadedStartFen(null);
     setEvalPoints([]);
     setAnalysisResult(null);
+    setTurningPoint(null);
     setFenDraft("");
     bump();
   }, [bump]);
@@ -162,23 +234,12 @@ export function AnalysisScreen() {
   const handleLoadPosition = useCallback(() => {
     const raw = fenDraft.trim();
     if (!raw) return;
-    const next = new Chess();
-    try {
-      if (raw.split(" ").length >= 4 && raw.includes("/")) {
-        next.load(raw);
-      } else {
-        next.loadPgn(raw);
-      }
-      chessRef.current = next;
-      setEvalPoints([]);
-      setAnalysisResult(null);
-      bump();
-    } catch {
+    if (!loadRawIntoBoard(raw)) {
       setLoadError("Некорректный FEN или PGN. Проверьте формат записи.");
     }
-  }, [bump, fenDraft]);
+  }, [fenDraft, loadRawIntoBoard]);
 
-  // Run live Stockfish MultiPV=3 analysis whenever position changes.
+  // Live Stockfish MultiPV=3 analysis whenever position or target depth changes.
   useEffect(() => {
     if (!engine.available) return;
     const targetFen = activeBoard.fen;
@@ -192,8 +253,8 @@ export function AnalysisScreen() {
         startFen: targetFen,
         moves: [],
         skillLevel: 20,
-        depth: 16,
-        movetimeMs: 1200,
+        depth: settings.engine.analysisDepth,
+        movetimeMs: settings.engine.analysisDepth >= 20 ? 2200 : 1200,
         multiPv: 3,
       })
       .then((res) => {
@@ -221,8 +282,24 @@ export function AnalysisScreen() {
       live = false;
       engine.stop();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- search per position change
-  }, [activeBoard.fen, activeBoard.turn, activePly, engine.available]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- search per position or analysisDepth
+  }, [
+    activeBoard.fen,
+    activeBoard.turn,
+    activePly,
+    engine.available,
+    settings.engine.analysisDepth,
+  ]);
+
+  const opening = useMemo(
+    () => detectOpening(fullHistory, loadedStartFen),
+    [fullHistory, loadedStartFen],
+  );
+
+  const structure = useMemo(
+    () => analyzePositionStructure(activeBoard.fen, analysisResult?.score ?? null),
+    [activeBoard.fen, analysisResult?.score],
+  );
 
   const bestArrows = useMemo<BoardArrow[]>(() => {
     if (!analysisResult || analysisResult.fen !== activeBoard.fen) return [];
@@ -241,11 +318,43 @@ export function AnalysisScreen() {
     }));
   }, [activeBoard.fen, analysisResult]);
 
+  const handleFindTurningPoint = () => {
+    const tp = findTurningPoint(
+      evalPoints,
+      fullHistory.map((m) => m.san),
+    );
+    if (!tp) {
+      setTurningPoint({
+        ply: activePly,
+        moveNumber: Math.max(1, Math.ceil(activePly / 2)),
+        swingPawns: 0,
+        summary:
+          "Просмотрите несколько ходов по списку истории, чтобы график оценок зафиксировал резкие перепады.",
+      });
+      return;
+    }
+    setTurningPoint(tp);
+    setViewPly(tp.ply);
+    completeErrorAnalysis();
+  };
+
+  const handleCopy = (kind: "fen" | "pgn") => {
+    const val = kind === "fen" ? activeBoard.fen : chessRef.current.pgn() || activeBoard.fen;
+    void navigator.clipboard?.writeText(val);
+    setCopiedKey(kind);
+    window.setTimeout(() => setCopiedKey(null), 1500);
+  };
+
+  const handleDownloadPgn = () => {
+    const pgn = chessRef.current.pgn() || `[FEN "${activeBoard.fen}"]\n`;
+    triggerFileDownload(`prochess-analysis-${new Date().toISOString().slice(0, 10)}.pgn`, pgn);
+  };
+
   const analyzing = engine.status === "thinking" && engine.purpose === "analysis";
 
   return (
-    <main className="mx-auto w-full max-w-[1400px] flex-1 px-3 pb-12 pt-4 sm:px-6 lg:pt-8">
-      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_27rem] lg:gap-8">
+    <main className="mx-auto w-full max-w-[1440px] flex-1 px-3 pb-12 pt-4 sm:px-6 lg:pt-6">
+      <div className="grid items-start gap-5 lg:grid-cols-[minmax(0,1fr)_28rem] lg:gap-7">
         <section
           aria-label="Доска анализа"
           className="mx-auto flex w-full max-w-[min(100%,calc(100svh-8rem))] items-stretch gap-2.5 lg:max-w-[min(100%,calc(100svh-9.5rem))]"
@@ -260,6 +369,9 @@ export function AnalysisScreen() {
               <span className="flex items-center gap-2 font-mono">
                 <Sparkles className="size-3.5 text-primary" aria-hidden />
                 Режим анализа · Ход {activeBoard.turn === "w" ? "белых" : "чёрных"}
+                <strong className="rounded bg-secondary px-1.5 py-0.5 text-foreground">
+                  {formatDecimalEval(analysisResult?.score ?? null)}
+                </strong>
               </span>
               <span className="flex items-center gap-1.5 font-mono">
                 {analyzing ? (
@@ -275,6 +387,30 @@ export function AnalysisScreen() {
                 )}
               </span>
             </div>
+
+            <BoardDrawToolbar
+              tool={drawing.tool}
+              onToolChange={drawing.setTool}
+              color={drawing.color}
+              onColorChange={drawing.setColor}
+              drawingsVisible={drawing.drawingsVisible}
+              onToggleVisible={drawing.toggleVisible}
+              autoClear={drawing.autoClear}
+              onAutoClearChange={drawing.setAutoClear}
+              hasDrawings={drawing.hasDrawings}
+              canUndo={drawing.canUndo}
+              onUndo={drawing.undoDrawing}
+              onClear={drawing.clearDrawings}
+              showThreats={settings.board.showThreatOverlay}
+              onToggleThreats={() =>
+                update({ board: { showThreatOverlay: !settings.board.showThreatOverlay } })
+              }
+              showCombos={settings.board.showComboOverlay}
+              onToggleCombos={() =>
+                update({ board: { showComboOverlay: !settings.board.showComboOverlay } })
+              }
+            />
+
             <ChessBoard
               cells={activeBoard.cells}
               positionKey={`${activeBoard.fen}-${activePly}`}
@@ -286,16 +422,65 @@ export function AnalysisScreen() {
               checkSquare={activeBoard.checkSquare}
               hint={null}
               arrows={bestArrows}
+              drawings={drawing.drawings}
+              drawTool={drawing.tool}
+              drawColor={drawing.color}
+              drawingsVisible={drawing.drawingsVisible}
+              onToggleArrow={drawing.toggleArrow}
+              onToggleHighlight={drawing.toggleHighlight}
+              onEraseAtSquare={drawing.eraseSquare}
+              showThreats={settings.board.showThreatOverlay}
+              showCombos={settings.board.showComboOverlay}
               onMove={handleMove}
             />
+
+            {/* WDL Probability Bar */}
+            <div className="panel space-y-1.5 p-3 text-xs">
+              <div className="flex items-center justify-between font-mono text-[11px]">
+                <span className="text-foreground">Белые {structure.wdl.whiteWin}%</span>
+                <span className="text-muted-foreground">Ничья {structure.wdl.draw}%</span>
+                <span className="text-foreground">Чёрные {structure.wdl.blackWin}%</span>
+              </div>
+              <div className="flex h-2 w-full overflow-hidden rounded-full bg-secondary">
+                <div
+                  className="bg-ivory transition-all duration-300"
+                  style={{ width: `${structure.wdl.whiteWin}%` }}
+                />
+                <div
+                  className="bg-muted-foreground/45 transition-all duration-300"
+                  style={{ width: `${structure.wdl.draw}%` }}
+                />
+                <div
+                  className="bg-slate-800 transition-all duration-300"
+                  style={{ width: `${structure.wdl.blackWin}%` }}
+                />
+              </div>
+            </div>
           </div>
         </section>
 
-        <aside className="flex flex-col gap-4" aria-label="Панель анализа">
+        <aside className="flex flex-col gap-3.5" aria-label="Панель анализа">
           <section className="panel space-y-3 p-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <p className="eyebrow text-primary">Лаборатория анализа</p>
-              <span className="font-mono text-xs text-muted-foreground">MultiPV 3</span>
+              <div className="flex items-center gap-1">
+                {ANALYSIS_DEPTHS.map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => update({ engine: { analysisDepth: d as AnalysisDepth } })}
+                    className={cn(
+                      "rounded px-1.5 py-0.5 font-mono text-[11px] transition-colors",
+                      settings.engine.analysisDepth === d
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-secondary text-muted-foreground hover:text-foreground",
+                    )}
+                    title={`Глубина анализа ${d}`}
+                  >
+                    D{d}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="grid grid-cols-3 gap-2">
@@ -314,10 +499,50 @@ export function AnalysisScreen() {
                 size="sm"
                 onClick={() => setOrientation((o) => (o === "w" ? "b" : "w"))}
               >
-                <FlipVertical2 className="size-3.5" /> Перевернуть
+                <FlipVertical2 className="size-3.5" /> Доска
               </Button>
               <Button type="button" variant="panel" size="sm" onClick={handleReset}>
                 <RotateCcw className="size-3.5" /> Сбросить
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-1.5">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs"
+                onClick={() => handleCopy("fen")}
+              >
+                {copiedKey === "fen" ? (
+                  <Check className="size-3 text-primary" />
+                ) : (
+                  <Copy className="size-3" />
+                )}
+                FEN
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs"
+                onClick={() => handleCopy("pgn")}
+              >
+                {copiedKey === "pgn" ? (
+                  <Check className="size-3 text-primary" />
+                ) : (
+                  <Copy className="size-3" />
+                )}
+                PGN
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs"
+                onClick={handleDownloadPgn}
+              >
+                <Download className="size-3 text-primary" /> Файл .pgn
               </Button>
             </div>
 
@@ -342,7 +567,7 @@ export function AnalysisScreen() {
 
             <div className="space-y-1.5 border-t border-border/70 pt-3">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-muted-foreground">Варианты движка</span>
+                <span className="text-muted-foreground">Варианты движка (MultiPV 3)</span>
                 <span className="font-mono text-[11px] text-primary">
                   {analysisResult ? `Depth ${analysisResult.depth}` : "…"}
                 </span>
@@ -374,11 +599,72 @@ export function AnalysisScreen() {
                 </ul>
               )}
             </div>
+
+            {/* Deep Positional Metrics */}
+            <div className="space-y-2 border-t border-border/70 pt-3">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                  <Activity className="size-3.5 text-primary" aria-hidden />
+                  Структурный анализ позиции
+                </span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-[11px] text-primary"
+                  onClick={handleFindTurningPoint}
+                >
+                  <Compass className="size-3" /> Переломный момент
+                </Button>
+              </div>
+
+              {turningPoint && (
+                <p className="rounded-md border border-primary/35 bg-primary/10 px-2.5 py-1.5 text-xs text-foreground">
+                  {turningPoint.summary}
+                </p>
+              )}
+
+              <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                <MetricBox
+                  label="Материал"
+                  value={`${structure.materialDelta > 0 ? "+" : ""}${structure.materialDelta}`}
+                />
+                <MetricBox
+                  label="Контроль центра"
+                  value={`Б ${structure.centerControl.w} : Ч ${structure.centerControl.b}`}
+                />
+                <MetricBox
+                  label="Пространство"
+                  value={`Б ${structure.spaceControl.w} : Ч ${structure.spaceControl.b}`}
+                />
+                <MetricBox
+                  label="Активность (ходы)"
+                  value={`Б ${structure.mobility.w} : Ч ${structure.mobility.b}`}
+                />
+                <MetricBox label="Король белых" value={structure.kingSafety.w} />
+                <MetricBox label="Король чёрных" value={structure.kingSafety.b} />
+                <MetricBox
+                  label="Открытые линии"
+                  value={
+                    structure.openFiles.length > 0 ? structure.openFiles.join(", ") : "Закрыто"
+                  }
+                />
+                <MetricBox
+                  label="Слабые поля"
+                  value={
+                    structure.weakSquares.b[0] || structure.weakSquares.w[0]
+                      ? `Б:${structure.weakSquares.w.join(",") || "—"} / Ч:${structure.weakSquares.b.join(",") || "—"}`
+                      : "Сбалансировано"
+                  }
+                />
+              </div>
+            </div>
           </section>
 
           <MoveList
             history={fullHistory}
             viewPly={viewPly}
+            openingLabel={opening?.label ?? null}
             onInspectPly={(ply) => setViewPly(ply)}
             onStepHistory={(delta) => {
               const cur = viewPly ?? fullHistory.length;
@@ -397,5 +683,14 @@ export function AnalysisScreen() {
         </aside>
       </div>
     </main>
+  );
+}
+
+function MetricBox({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-border/75 bg-secondary/40 px-2.5 py-1.5">
+      <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="mt-0.5 truncate font-mono text-xs font-medium text-foreground">{value}</p>
+    </div>
   );
 }

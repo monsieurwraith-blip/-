@@ -1,16 +1,18 @@
 import { Chess, type Move } from "chess.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { analyzePlayerMove, type PendingAnalysis } from "@/features/coach/analysis";
+import { useSettings } from "@/features/settings/SettingsProvider";
 import { useChessClock } from "@/hooks/useChessClock";
 import { useChessGame } from "@/hooks/useChessGame";
 import { useStockfish } from "@/hooks/useStockfish";
-import { useSettings } from "@/features/settings/SettingsProvider";
-import { analyzePlayerMove, type PendingAnalysis } from "@/features/coach/analysis";
+import { getBotById, pickBotBookMove } from "@/lib/chess/bots";
 import type { ClockTimes } from "@/lib/chess/clock";
 import { engineMovetime, getDifficulty } from "@/lib/chess/difficulty";
 import { resolveTimeout } from "@/lib/chess/outcome";
 import type { BoardCell } from "@/lib/chess/pieceIds";
-import { getTimeControl } from "@/lib/chess/timeControls";
+import { validateQueuedPremove } from "@/lib/chess/premove";
+import { getTimeControl, type TimeControlId } from "@/lib/chess/timeControls";
 import {
   opposite,
   type BoardMove,
@@ -24,9 +26,14 @@ import { pliesToUndo } from "@/lib/chess/undo";
 import { chartPawns, isMistakeClass, povCp, toWhitePov } from "@/lib/coach/evaluation";
 import { buildLayeredHint, type HintLevel } from "@/lib/coach/hints";
 import type { CoachRecord, EvalPoint } from "@/lib/coach/report";
-import { playUci } from "@/lib/coach/tactics";
-import type { PlayStyleId } from "@/lib/settings/settings";
+import { hangingPieces, playUci } from "@/lib/coach/tactics";
 import { thinkTimeMs } from "@/lib/engine/thinkTime";
+import {
+  HISTORICAL_STYLES,
+  type GameMode,
+  type HistoricalStyleId,
+  type PlayStyleId,
+} from "@/lib/settings/settings";
 import { stopSpeaking } from "@/lib/sound/speech";
 
 import type { ActiveGame, GameSettings, HintMove } from "./types";
@@ -50,6 +57,20 @@ export interface InspectedPosition {
   checkSquare: Square | null;
 }
 
+function resolveEffectiveStyle(
+  playStyle: PlayStyleId,
+  historical: HistoricalStyleId,
+): {
+  style: PlayStyleId;
+  bonusSkill: number;
+} {
+  const hist = HISTORICAL_STYLES.find((h) => h.id === historical);
+  if (playStyle === "balanced" && hist && hist.id !== "modern") {
+    return { style: hist.style, bonusSkill: hist.bonusSkill };
+  }
+  return { style: playStyle, bonusSkill: hist?.bonusSkill ?? 0 };
+}
+
 function chooseStyledCandidate(
   fen: string,
   bestMove: string,
@@ -58,14 +79,24 @@ function chooseStyledCandidate(
   engineColor: Color,
 ): string {
   if (playStyle === "balanced" || lines.length < 2) return bestMove;
+  if (playStyle === "random" && lines.length >= 2) {
+    const pick = lines[Math.floor(Math.random() * Math.min(3, lines.length))];
+    const uci = pick?.pv[0];
+    if (uci && pick?.score) {
+      const cp1 = povCp(toWhitePov(lines[0]!.score!, engineColor), engineColor);
+      const cpPick = povCp(toWhitePov(pick.score, engineColor), engineColor);
+      if (cp1 - cpPick <= 35) return uci;
+    }
+    return bestMove;
+  }
+
   const pv1 = lines[0];
   const pv2 = lines[1];
   const uci2 = pv2?.pv[0];
   if (!pv1?.score || !pv2?.score || !uci2) return bestMove;
   const cp1 = povCp(toWhitePov(pv1.score, engineColor), engineColor);
   const cp2 = povCp(toWhitePov(pv2.score, engineColor), engineColor);
-  // Only switch away from PV1 if PV2 is practically equal (within 15 cp) and matches style.
-  if (cp1 - cp2 > 15) return bestMove;
+  if (cp1 - cp2 > 18) return bestMove;
 
   const board1 = new Chess(fen);
   const m1 = playUci(board1, bestMove);
@@ -80,14 +111,33 @@ function chooseStyledCandidate(
   const solidScore = (m: Move) =>
     (m.isKingsideCastle() || m.isQueensideCastle() ? 3 : 0) +
     (!m.captured && (m.piece === "p" || m.piece === "b" || m.piece === "n") ? 1 : 0);
+  const tacticalScore = (m: Move) =>
+    (m.san.includes("+") ? 3 : 0) + (m.captured ? 2 : 0) + (m.promotion ? 3 : 0);
 
-  if (playStyle === "aggressive" && aggrScore(m2) > aggrScore(m1)) return uci2;
-  if (playStyle === "solid" && solidScore(m2) > solidScore(m1)) return uci2;
+  if ((playStyle === "aggressive" || playStyle === "counter") && aggrScore(m2) > aggrScore(m1)) {
+    return uci2;
+  }
+  if (playStyle === "tactician" && tacticalScore(m2) > tacticalScore(m1)) {
+    return uci2;
+  }
+  if (
+    (playStyle === "solid" ||
+      playStyle === "defender" ||
+      playStyle === "cautious" ||
+      playStyle === "grandmaster") &&
+    solidScore(m2) > solidScore(m1)
+  ) {
+    return uci2;
+  }
   return bestMove;
 }
 
-function buildSnapshotAtPly(history: readonly Move[], targetPly: number): InspectedPosition {
-  const chess = new Chess();
+function buildSnapshotAtPly(
+  history: readonly Move[],
+  targetPly: number,
+  startFen?: string | null,
+): InspectedPosition {
+  const chess = startFen ? new Chess(startFen) : new Chess();
   let last: Move | null = null;
   const count = Math.max(0, Math.min(history.length, targetPly));
   for (let i = 0; i < count; i++) {
@@ -119,9 +169,18 @@ function buildSnapshotAtPly(history: readonly Move[], targetPly: number): Inspec
   };
 }
 
+function defaultTimeForMode(mode: GameMode, current: TimeControlId): TimeControlId {
+  if (mode === "coach") return "untimed";
+  if (mode === "bullet") return "1+0";
+  if (mode === "blitz") return current === "3+2" || current === "5+0" ? current : "3+2";
+  if (mode === "rapid") return current === "10+0" || current === "15+10" ? current : "10+0";
+  return current;
+}
+
 /**
  * Orchestrates one game against Stockfish: rules (chess.js), clocks, the
- * engine worker, redo stack, history inspection, multi-level hints, and Coach mode.
+ * engine worker, redo stack, history inspection, multi-level hints, threat radar,
+ * draw offers, and Coach mode.
  */
 export function usePlayController() {
   const game = useChessGame();
@@ -149,6 +208,8 @@ export function usePlayController() {
   const [coachError, setCoachError] = useState<string | null>(null);
   const [redoStack, setRedoStack] = useState<RedoMoveEntry[][]>([]);
   const [viewPly, setViewPly] = useState<number | null>(null);
+  const [showThreats, setShowThreats] = useState(false);
+  const [drawNotice, setDrawNotice] = useState<string | null>(null);
   const [liveEval, setLiveEval] = useState<{
     score: EngineScore;
     depth: number;
@@ -156,20 +217,36 @@ export function usePlayController() {
     turn: Color;
   } | null>(null);
   const [evalHistory, setEvalHistory] = useState<EvalPoint[]>([]);
+  const [premove, setPremove] = useState<BoardMove | null>(null);
 
   const clockHistory = useRef<ClockTimes[]>([]);
   const gameCounter = useRef(0);
+  const gameStartedAt = useRef<number>(Date.now());
   const hintPendingRef = useRef(false);
+  const premoveRef = useRef<BoardMove | null>(null);
+  const passFlipTimerRef = useRef<number | null>(null);
 
+  const isPassAndPlay = active?.settings.mode === "pass-and-play";
   const playerColor = active?.playerColor ?? null;
-  const engineColor = playerColor ? opposite(playerColor) : null;
-  const coachOn = active?.settings.mode === "coach";
-  const coachBlocking = coachOn && (coachPhase === "analyzing" || coachPhase === "review");
+  const engineColor = playerColor && !isPassAndPlay ? opposite(playerColor) : null;
+  const coachOn = active?.settings.mode === "coach" || active?.settings.mode === "arena";
+  const coachBlocking =
+    active?.settings.mode === "coach" && (coachPhase === "analyzing" || coachPhase === "review");
   const uciMoves = useMemo(() => game.history.map((m) => toUciMove(m)), [game.history]);
 
   useEffect(() => {
     if (!active) setOrientation(settings.side === "b" ? "b" : "w");
   }, [active, settings.side]);
+
+  const queuePremove = useCallback((move: BoardMove) => {
+    premoveRef.current = move;
+    setPremove(move);
+  }, []);
+
+  const cancelPremove = useCallback(() => {
+    premoveRef.current = null;
+    setPremove(null);
+  }, []);
 
   const recordEvalPoint = useCallback((ply: number, whiteScore: EngineScore) => {
     setEvalHistory((prev) => {
@@ -183,6 +260,7 @@ export function usePlayController() {
       clockHistory.current.push(clock.press(color));
       setHint(null);
       setViewPly(null);
+      setDrawNotice(null);
     },
     [clock],
   );
@@ -195,18 +273,47 @@ export function usePlayController() {
   }, []);
 
   const startGame = useCallback(
-    (next: GameSettings) => {
-      const color: Color = next.side === "random" ? (Math.random() < 0.5 ? "w" : "b") : next.side;
-      const started: GameSettings =
-        next.mode === "coach" ? { ...next, timeControl: "untimed" } : next;
+    (
+      next: GameSettings,
+      options?: { startFen?: string | null | undefined; drillLabel?: string | null | undefined },
+    ) => {
+      if (passFlipTimerRef.current !== null) {
+        window.clearTimeout(passFlipTimerRef.current);
+        passFlipTimerRef.current = null;
+      }
+      const startFen = options?.startFen?.trim() || null;
+      const drillLabel = options?.drillLabel ?? null;
+      let startTurn: Color = "w";
+      if (startFen) {
+        try {
+          startTurn = new Chess(startFen).turn();
+        } catch {
+          startTurn = "w";
+        }
+      }
+      const color: Color =
+        next.mode === "pass-and-play"
+          ? startTurn
+          : startFen
+            ? startTurn
+            : next.side === "random"
+              ? Math.random() < 0.5
+                ? "w"
+                : "b"
+              : next.side;
+      const resolvedTime = defaultTimeForMode(next.mode, next.timeControl);
+      const started: GameSettings = { ...next, timeControl: resolvedTime };
       const tc = getTimeControl(started.timeControl);
       stopSpeaking();
       engine.stop();
-      game.reset();
+      game.reset(startFen ?? undefined);
       clock.reset(tc.initialMs, tc.incrementMs);
       clockHistory.current = [clock.read()];
+      premoveRef.current = null;
+      setPremove(null);
       setHint(null);
       setEngineMoveError(null);
+      setDrawNotice(null);
       setRedoStack([]);
       setViewPly(null);
       setLiveEval(null);
@@ -214,24 +321,40 @@ export function usePlayController() {
       resetCoach();
       setOrientation(color);
       gameCounter.current += 1;
-      setActive({ id: gameCounter.current, settings: started, playerColor: color });
+      gameStartedAt.current = Date.now();
+      setActive({
+        id: gameCounter.current,
+        settings: started,
+        playerColor: color,
+        startFen,
+        drillLabel,
+      });
       void engine.newGame();
     },
     [clock, engine, game, resetCoach],
   );
 
   const restart = useCallback(() => {
-    if (active) startGame(active.settings);
+    if (active) {
+      startGame(active.settings, { startFen: active.startFen, drillLabel: active.drillLabel });
+    }
   }, [active, startGame]);
 
   const backToSetup = useCallback(() => {
+    if (passFlipTimerRef.current !== null) {
+      window.clearTimeout(passFlipTimerRef.current);
+      passFlipTimerRef.current = null;
+    }
     stopSpeaking();
     engine.stop();
     clock.pause();
     game.reset();
+    premoveRef.current = null;
+    setPremove(null);
     setActive(null);
     setHint(null);
     setEngineMoveError(null);
+    setDrawNotice(null);
     setRedoStack([]);
     setViewPly(null);
     setLiveEval(null);
@@ -241,8 +364,15 @@ export function usePlayController() {
   }, [clock, engine, game, resetCoach, settings.side]);
 
   const updateSettings = useCallback(
-    (patch: Partial<GameSettings>) => updateUserSettings({ game: patch }),
-    [updateUserSettings],
+    (patch: Partial<GameSettings>) => {
+      if (patch.mode && !patch.timeControl) {
+        const nextTc = defaultTimeForMode(patch.mode, settings.timeControl);
+        updateUserSettings({ game: { ...patch, timeControl: nextTc } });
+      } else {
+        updateUserSettings({ game: patch });
+      }
+    },
+    [settings.timeControl, updateUserSettings],
   );
 
   const playerMove = useCallback(
@@ -250,17 +380,22 @@ export function usePlayController() {
       if (viewPly !== null && viewPly < gameRef.current.history.length) return false;
       const g = gameRef.current;
       const chess = g.chess();
+      const localTwoPlayer = active?.settings.mode === "pass-and-play";
+      const expectedTurn = localTwoPlayer ? g.turn : active?.playerColor;
       if (
         !active ||
+        !expectedTurn ||
         g.isOver ||
         chess.isGameOver() ||
-        g.turn !== active.playerColor ||
-        chess.turn() !== active.playerColor ||
+        g.turn !== expectedTurn ||
+        chess.turn() !== expectedTurn ||
         coachBlocking
       ) {
         return false;
       }
       if (hintPendingRef.current) engine.stop();
+      premoveRef.current = null;
+      setPremove(null);
       const fenBefore = g.fen;
       const movesBefore = g.history.map((m) => toUciMove(m));
       const ply = g.history.length;
@@ -268,7 +403,15 @@ export function usePlayController() {
       if (!played) return false;
       setRedoStack([]);
       recordMove(played.color);
-      if (active.settings.mode === "coach") {
+      if (localTwoPlayer && userSettings.board.autoFlipPassAndPlay && !g.chess().isGameOver()) {
+        const nextSide = opposite(played.color);
+        if (passFlipTimerRef.current !== null) window.clearTimeout(passFlipTimerRef.current);
+        passFlipTimerRef.current = window.setTimeout(() => {
+          setOrientation(nextSide);
+          passFlipTimerRef.current = null;
+        }, 320);
+      }
+      if (active.settings.mode === "coach" || active.settings.mode === "arena") {
         const afterChess = g.chess();
         setCoachError(null);
         setPending({
@@ -279,37 +422,90 @@ export function usePlayController() {
           playerColor: active.playerColor,
           gameOverAfter: afterChess.isGameOver(),
         });
-        setCoachPhase("analyzing");
+        if (active.settings.mode === "coach") setCoachPhase("analyzing");
       }
       return true;
     },
-    [active, coachBlocking, engine, recordMove, viewPly],
+    [active, coachBlocking, engine, recordMove, userSettings.board.autoFlipPassAndPlay, viewPly],
   );
 
-  // Engine's turn: request one search per position with user depthLimit and playStyle.
+  // Engine's turn: request one search per position with bot profile, depthLimit, and playStyle.
   useEffect(() => {
-    if (!active || !engineColor || game.isOver || !engine.available || coachBlocking) return;
+    if (
+      !active ||
+      isPassAndPlay ||
+      !engineColor ||
+      game.isOver ||
+      !engine.available ||
+      coachBlocking
+    )
+      return;
     if (game.turn !== engineColor) return;
     let live = true;
+    const namedBot = getBotById(active.settings.botId);
+
+    // Thematic opening book move for named bots during opening
+    if (namedBot && !active.startFen && game.history.length < 8) {
+      const bookUci = pickBotBookMove(namedBot, game.fen);
+      if (bookUci) {
+        const timer = window.setTimeout(() => {
+          if (!live) return;
+          const parsed = parseUciMove(bookUci);
+          const played = parsed ? gameRef.current.move(parsed) : null;
+          if (played) {
+            setEngineMoveError(null);
+            recordMove(played.color);
+            const queued = premoveRef.current;
+            if (queued && !gameRef.current.isOver) {
+              premoveRef.current = null;
+              setPremove(null);
+              const validated = validateQueuedPremove(
+                gameRef.current.fen,
+                queued,
+                active.playerColor,
+              );
+              if (validated) {
+                window.setTimeout(() => {
+                  playerMove(validated);
+                }, 40);
+              }
+            }
+          }
+        }, 280);
+        return () => {
+          live = false;
+          window.clearTimeout(timer);
+        };
+      }
+    }
+
     const level = getDifficulty(active.settings.difficulty);
     const tc = getTimeControl(active.settings.timeControl);
     const remaining = clock.enabled ? clock.read()[engineColor] : null;
     const es = engineSettingsRef.current;
+    const { style: resolvedStyle, bonusSkill } = resolveEffectiveStyle(
+      namedBot ? namedBot.playStyle : es.playStyle,
+      es.historicalStyle,
+    );
+    const baseSkill = namedBot ? namedBot.skillLevel : level.skillLevel;
+    const skillLevel = Math.min(20, baseSkill + (namedBot ? 0 : bonusSkill));
     const baseThinkMs = thinkTimeMs(es.thinkTime, es.customSeconds, game.fen);
     const movetimeMs = engineMovetime(baseThinkMs, remaining, tc.incrementMs);
+    const botOrLevelDepth = namedBot ? namedBot.depth : level.depth;
     const depth =
       es.depthLimit !== null
-        ? level.depth !== null
-          ? Math.min(level.depth, es.depthLimit)
+        ? botOrLevelDepth !== null
+          ? Math.min(botOrLevelDepth, es.depthLimit)
           : es.depthLimit
-        : level.depth;
-    const multiPv = es.playStyle !== "balanced" && level.skillLevel >= 12 ? 2 : 1;
+        : botOrLevelDepth;
+    const multiPv = resolvedStyle !== "balanced" && skillLevel >= 10 ? 3 : 1;
 
     engine
       .search({
         purpose: "move",
+        ...(active.startFen ? { startFen: active.startFen } : {}),
         moves: uciMoves,
-        skillLevel: level.skillLevel,
+        skillLevel,
         depth,
         movetimeMs,
         multiPv,
@@ -335,7 +531,7 @@ export function usePlayController() {
           gameRef.current.fen,
           result.bestMove,
           result.lines,
-          engineSettingsRef.current.playStyle,
+          resolvedStyle,
           engineColor,
         );
         const parsed = parseUciMove(chosenUci);
@@ -348,6 +544,18 @@ export function usePlayController() {
         }
         setEngineMoveError(null);
         recordMove(played.color);
+
+        const queued = premoveRef.current;
+        if (queued && !gameRef.current.isOver) {
+          premoveRef.current = null;
+          setPremove(null);
+          const validated = validateQueuedPremove(gameRef.current.fen, queued, active.playerColor);
+          if (validated) {
+            window.setTimeout(() => {
+              playerMove(validated);
+            }, 40);
+          }
+        }
       })
       .catch(() => {
         // Fatal errors surface via engine.error.
@@ -357,12 +565,23 @@ export function usePlayController() {
       engine.stop();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- one search per (game, position)
-  }, [active, engineColor, game.fen, game.isOver, game.turn, engine.available, coachBlocking]);
+  }, [
+    active,
+    isPassAndPlay,
+    engineColor,
+    game.fen,
+    game.isOver,
+    game.turn,
+    engine.available,
+    coachBlocking,
+  ]);
 
   useEffect(() => {
     if (!game.isOver) return;
     clock.pause();
     engine.stop();
+    premoveRef.current = null;
+    setPremove(null);
     setHint(null);
   }, [game.isOver, clock, engine]);
 
@@ -392,7 +611,11 @@ export function usePlayController() {
         setRecords((rs) => [...rs.filter((r) => r.corrected || r.ply < pending.ply), record]);
         setPending(null);
         const over = gameRef.current.isOver;
-        setCoachPhase(isMistakeClass(verdict.classification) && !over ? "review" : "idle");
+        if (active.settings.mode === "coach") {
+          setCoachPhase(isMistakeClass(verdict.classification) && !over ? "review" : "idle");
+        } else {
+          setCoachPhase("idle");
+        }
       })
       .catch(() => {
         if (!live || gameCounter.current !== gameId) return;
@@ -408,12 +631,16 @@ export function usePlayController() {
   }, [pending, engine.available]);
 
   const outcomeType = game.outcome?.type ?? null;
-  const undoPlies = playerColor
-    ? pliesToUndo(
-        game.history.map((m) => m.color),
-        playerColor,
-      )
-    : 0;
+  const undoPlies = isPassAndPlay
+    ? game.history.length > 0
+      ? 1
+      : 0
+    : playerColor
+      ? pliesToUndo(
+          game.history.map((m) => m.color),
+          playerColor,
+        )
+      : 0;
   const canUndo =
     active !== null &&
     undoPlies > 0 &&
@@ -421,12 +648,15 @@ export function usePlayController() {
     !coachBlocking &&
     outcomeType !== "timeout" &&
     outcomeType !== "timeout-draw" &&
-    outcomeType !== "resign";
+    outcomeType !== "resign" &&
+    outcomeType !== "agreement";
 
   const takeBack = useCallback(
     (plies: number, saveForRedo = false) => {
       if (!playerColor || plies <= 0) return;
       engine.stop();
+      premoveRef.current = null;
+      setPremove(null);
       const historySlice = gameRef.current.history.slice(-plies);
       const clockStartIdx = Math.max(0, clockHistory.current.length - plies);
       if (saveForRedo && historySlice.length > 0) {
@@ -444,7 +674,7 @@ export function usePlayController() {
       game.undo(plies);
       clockHistory.current = clockHistory.current.slice(0, clockHistory.current.length - plies);
       const snapshot = clockHistory.current[clockHistory.current.length - 1];
-      if (snapshot) clock.restore(snapshot, newLength > 0 ? playerColor : null);
+      if (snapshot) clock.restore(snapshot, newLength > 0 ? game.chess().turn() : null);
       setHint(null);
       setViewPly(null);
       setEngineMoveError(null);
@@ -480,7 +710,7 @@ export function usePlayController() {
       clockHistory.current.push(snap);
     }
     const latestSnap = clockHistory.current[clockHistory.current.length - 1];
-    if (latestSnap) clock.restore(latestSnap, playerColor);
+    if (latestSnap) clock.restore(latestSnap, gameRef.current.chess().turn());
     setRedoStack((prev) => prev.slice(0, -1));
     setHint(null);
     setViewPly(null);
@@ -489,7 +719,6 @@ export function usePlayController() {
 
   const latestRecord = records[records.length - 1] ?? null;
 
-  /** "Исправить ход": take back the mistake and show Level 3 best move on the board. */
   const fixMove = useCallback(() => {
     if (coachPhase !== "review" || !latestRecord || !playerColor) return;
     const record = latestRecord;
@@ -508,8 +737,8 @@ export function usePlayController() {
 
   const isViewingHistory = viewPly !== null && viewPly < game.history.length;
   const inspected = useMemo(
-    () => (isViewingHistory ? buildSnapshotAtPly(game.history, viewPly) : null),
-    [game.history, isViewingHistory, viewPly],
+    () => (isViewingHistory ? buildSnapshotAtPly(game.history, viewPly, active?.startFen) : null),
+    [active?.startFen, game.history, isViewingHistory, viewPly],
   );
 
   const inspectPly = useCallback(
@@ -536,14 +765,21 @@ export function usePlayController() {
     active !== null &&
     !game.isOver &&
     !isViewingHistory &&
-    game.turn === playerColor &&
+    (isPassAndPlay || game.turn === playerColor) &&
     !coachBlocking;
+  const canPremove =
+    active !== null &&
+    !isPassAndPlay &&
+    !game.isOver &&
+    !isViewingHistory &&
+    !coachBlocking &&
+    userSettings.board.premovesEnabled &&
+    game.turn === engineColor;
   const canHint = isPlayersTurn && engine.status === "ready" && !hintPending;
 
   const requestHint = useCallback(
     (requestedLevel?: HintLevel) => {
       if (!canHint) return;
-      // Escalate existing layered hint cleanly without triggering another search.
       if (hint) {
         const nextLevel: HintLevel =
           requestedLevel ?? (hint.level < 3 ? ((hint.level + 1) as HintLevel) : 3);
@@ -555,7 +791,12 @@ export function usePlayController() {
       hintPendingRef.current = true;
       setHintPending(true);
       engine
-        .search({ purpose: "hint", moves: uciMoves, ...HINT_SEARCH })
+        .search({
+          purpose: "hint",
+          ...(active?.startFen ? { startFen: active.startFen } : {}),
+          moves: uciMoves,
+          ...HINT_SEARCH,
+        })
         .then((result) => {
           if (result.cancelled || !result.bestMove || gameRef.current.fen !== fen) return;
           if (result.info?.score && playerColor) {
@@ -576,17 +817,52 @@ export function usePlayController() {
           setHintPending(false);
         });
     },
-    [canHint, engine, game.fen, hint, playerColor, uciMoves],
+    [active?.startFen, canHint, engine, game.fen, hint, playerColor, uciMoves],
   );
 
+  const offerDraw = useCallback(() => {
+    if (!active || game.isOver) return;
+    if (isPassAndPlay) {
+      setDrawNotice(null);
+      game.declareOutcome({ type: "agreement" });
+      return;
+    }
+    if (!engineColor) return;
+    if (game.history.length < 16) {
+      setDrawNotice(
+        "Бот отклонил ничью: в дебюте борьба только начинается (минимум 8 полных ходов).",
+      );
+      return;
+    }
+    const engineCp = liveEval?.score ? povCp(liveEval.score, engineColor) : 0;
+    if (engineCp <= 35) {
+      setPending(null);
+      setCoachPhase("idle");
+      setDrawNotice(null);
+      game.declareOutcome({ type: "agreement" });
+    } else {
+      setDrawNotice("Stockfish оценивает позицию в свою пользу и отклоняет ничью.");
+    }
+  }, [active, engineColor, game, isPassAndPlay, liveEval?.score]);
+
   const resign = useCallback(() => {
-    if (!active || game.isOver || !engineColor) return;
+    if (!active || game.isOver) return;
     setPending(null);
     setCoachPhase("idle");
+    if (isPassAndPlay) {
+      game.declareOutcome({ type: "resign", winner: opposite(game.turn) });
+      return;
+    }
+    if (!engineColor) return;
     game.declareOutcome({ type: "resign", winner: engineColor });
-  }, [active, engineColor, game]);
+  }, [active, engineColor, game, isPassAndPlay]);
 
   const flip = useCallback(() => setOrientation((o) => opposite(o)), []);
+
+  const threatSquares = useMemo(() => {
+    if (!showThreats || !playerColor) return [];
+    return hangingPieces(game.chess(), isPassAndPlay ? game.turn : playerColor);
+  }, [game, isPassAndPlay, playerColor, showThreats]);
 
   const lastMoveObj = game.history[game.history.length - 1];
   const lastMove = lastMoveObj ? { from: lastMoveObj.from, to: lastMoveObj.to } : null;
@@ -605,6 +881,9 @@ export function usePlayController() {
     engineMoveError,
     lastMove,
     isPlayersTurn,
+    canPremove,
+    premove,
+    isPassAndPlay,
     canUndo,
     canRedo,
     canHint,
@@ -614,6 +893,10 @@ export function usePlayController() {
     inspected,
     liveEval,
     evalHistory,
+    showThreats,
+    threatSquares,
+    drawNotice,
+    elapsedSeconds: () => Math.max(1, Math.round((Date.now() - gameStartedAt.current) / 1000)),
     thinkMs: thinkTimeMs(
       userSettings.engine.thinkTime,
       userSettings.engine.customSeconds,
@@ -632,15 +915,19 @@ export function usePlayController() {
       backToSetup,
       updateSettings,
       playerMove,
+      queuePremove,
+      cancelPremove,
       undo,
       redo,
       requestHint,
+      offerDraw,
       resign,
       flip,
       fixMove,
       continueGame,
       inspectPly,
       stepHistory,
+      toggleThreats: () => setShowThreats((v) => !v),
     },
   };
 }

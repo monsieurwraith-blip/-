@@ -150,14 +150,14 @@ export function ProChessLogo({
       <span className="flex flex-col leading-none">
         <span
           className={cn(
-            "font-sans font-semibold uppercase tracking-[0.28em] text-foreground",
-            variant === "splash" ? "text-2xl sm:text-3xl" : "text-sm",
+            "font-display font-bold uppercase tracking-[0.16em] text-foreground",
+            variant === "splash" ? "text-2xl sm:text-3xl" : "text-[15px]",
           )}
         >
           PRO<span className="text-primary">CHESS</span>
         </span>
         {subtitle && (
-          <span className="mt-1 font-mono text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+          <span className="mt-1 font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-muted-foreground">
             {subtitle}
           </span>
         )}

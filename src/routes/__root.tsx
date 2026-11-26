@@ -10,6 +10,7 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 
+import { ProgressionProvider } from "@/features/progression/ProgressionProvider";
 import { SettingsProvider } from "@/features/settings/SettingsProvider";
 
 import appCss from "../styles.css?url";
@@ -86,13 +87,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { title: "ProChess — Профессиональная шахматная платформа" },
       {
         name: "description",
-        content: "ProChess — профессиональный шахматный терминал со Stockfish 19, ИИ-тренером и анализом.",
+        content:
+          "ProChess — профессиональный шахматный терминал со Stockfish 19, ИИ-тренером и анализом.",
       },
       { name: "theme-color", content: "#0b0d10" },
       { property: "og:title", content: "ProChess — Профессиональная шахматная платформа" },
       {
         property: "og:description",
-        content: "ProChess — шахматы против Stockfish 19 с интеллектуальным тренером и телеметрией.",
+        content:
+          "ProChess — шахматы против Stockfish 19 с интеллектуальным тренером и телеметрией.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -102,7 +105,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
       {
         rel: "stylesheet",
-        href: "https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&family=Instrument+Serif&display=swap",
+        href: "https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Manrope:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,600&display=swap",
       },
       {
         rel: "stylesheet",
@@ -139,7 +142,9 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <SettingsProvider>
-        <Outlet />
+        <ProgressionProvider>
+          <Outlet />
+        </ProgressionProvider>
       </SettingsProvider>
     </QueryClientProvider>
   );

@@ -27,6 +27,10 @@ import { playClip } from "@/lib/sound/synth";
 
 export interface SettingsPatch {
   uiTheme?: AppSettings["uiTheme"];
+  layoutDensity?: AppSettings["layoutDensity"];
+  coachPersona?: AppSettings["coachPersona"];
+  coachDockSide?: AppSettings["coachDockSide"];
+  hotkeysEnabled?: AppSettings["hotkeysEnabled"];
   playerName?: AppSettings["playerName"];
   pieceSet?: AppSettings["pieceSet"];
   whitePieceSet?: AppSettings["whitePieceSet"];
@@ -43,6 +47,8 @@ export interface SettingsPatch {
 interface SettingsContextValue {
   settings: AppSettings;
   update: (patch: SettingsPatch) => void;
+  updateBoard: (patch: Partial<BoardDisplaySettings>) => void;
+  replaceSettings: (next: AppSettings) => void;
   reset: () => void;
   /** Plays a clip if the sound settings allow it. */
   play: (clip: SoundClip) => void;
@@ -53,6 +59,8 @@ interface SettingsContextValue {
 const SettingsContext = createContext<SettingsContextValue>({
   settings: DEFAULT_SETTINGS,
   update: () => undefined,
+  updateBoard: () => undefined,
+  replaceSettings: () => undefined,
   reset: () => undefined,
   play: () => undefined,
   preview: () => undefined,
@@ -62,6 +70,10 @@ export function mergeSettings(current: AppSettings, patch: SettingsPatch): AppSe
   return parseSettings({
     ...current,
     ...(patch.uiTheme !== undefined ? { uiTheme: patch.uiTheme } : {}),
+    ...(patch.layoutDensity !== undefined ? { layoutDensity: patch.layoutDensity } : {}),
+    ...(patch.coachPersona !== undefined ? { coachPersona: patch.coachPersona } : {}),
+    ...(patch.coachDockSide !== undefined ? { coachDockSide: patch.coachDockSide } : {}),
+    ...(patch.hotkeysEnabled !== undefined ? { hotkeysEnabled: patch.hotkeysEnabled } : {}),
     ...(patch.playerName !== undefined ? { playerName: patch.playerName } : {}),
     ...(patch.pieceSet !== undefined ? { pieceSet: patch.pieceSet } : {}),
     ...(patch.whitePieceSet !== undefined ? { whitePieceSet: patch.whitePieceSet } : {}),
@@ -78,6 +90,14 @@ export function mergeSettings(current: AppSettings, patch: SettingsPatch): AppSe
     game: { ...current.game, ...patch.game },
     engine: { ...current.engine, ...patch.engine },
   });
+}
+
+function channelForClip(clip: SoundClip): "piece" | "ui" | "notification" {
+  if (clip === "menu") return "ui";
+  if (clip === "gameEnd" || clip === "win" || clip === "loss" || clip === "achievement") {
+    return "notification";
+  }
+  return "piece";
 }
 
 interface SettingsProviderProps {
@@ -98,7 +118,9 @@ export function SettingsProvider({ children, loadImmediately = false }: Settings
 
   useEffect(() => {
     document.documentElement.dataset["uiTheme"] = settings.uiTheme;
-  }, [settings.uiTheme]);
+    document.documentElement.dataset["animationLevel"] = settings.board.animationLevel;
+    document.documentElement.dataset["layoutDensity"] = settings.layoutDensity;
+  }, [settings.uiTheme, settings.board.animationLevel, settings.layoutDensity]);
 
   const commit = useCallback((next: AppSettings) => {
     saveSettings(window.localStorage, next);
@@ -110,12 +132,32 @@ export function SettingsProvider({ children, loadImmediately = false }: Settings
     [commit],
   );
 
+  const updateBoard = useCallback(
+    (patch: Partial<BoardDisplaySettings>) => update({ board: patch }),
+    [update],
+  );
+
+  const replaceSettings = useCallback(
+    (next: AppSettings) => setSettings(commit(parseSettings(next))),
+    [commit],
+  );
+
   const reset = useCallback(() => setSettings(commit(DEFAULT_SETTINGS)), [commit]);
 
   const play = useCallback(
     (clip: SoundClip) => {
+      if (clip === "mistake" || clip === "achievement") {
+        if (!settings.sound.enabled || settings.sound.masterVolume <= 0) return;
+        const vol = effectiveSoundVolume(settings.sound, "notification");
+        if (vol > 0) playClip(clip, vol, settings.sound.soundPack);
+        return;
+      }
       if (soundAllowed(settings.sound, eventForClip(clip))) {
-        playClip(clip, effectiveSoundVolume(settings.sound));
+        playClip(
+          clip,
+          effectiveSoundVolume(settings.sound, channelForClip(clip)),
+          settings.sound.soundPack,
+        );
       }
     },
     [settings.sound],
@@ -123,17 +165,18 @@ export function SettingsProvider({ children, loadImmediately = false }: Settings
 
   const preview = useCallback(
     (clip: SoundClip) => {
-      if (settings.sound.enabled) {
-        playClip(clip, effectiveSoundVolume(settings.sound));
-      }
+      if (!settings.sound.enabled || settings.sound.masterVolume <= 0) return;
+      const vol = effectiveSoundVolume(settings.sound, channelForClip(clip));
+      if (vol > 0) playClip(clip, vol, settings.sound.soundPack);
     },
     [settings.sound],
   );
 
   const value = useMemo(
-    () => ({ settings, update, reset, play, preview }),
-    [settings, update, reset, play, preview],
+    () => ({ settings, update, updateBoard, replaceSettings, reset, play, preview }),
+    [settings, update, updateBoard, replaceSettings, reset, play, preview],
   );
+
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;
 }
 

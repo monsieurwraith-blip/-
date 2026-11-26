@@ -3,9 +3,11 @@
  * network — fonts are bundled and every file is served from the app package.
  * Screens are shared with the web app; only the router setup differs.
  */
-import "@fontsource-variable/geist";
-import "@fontsource-variable/geist-mono";
-import "@fontsource/instrument-serif";
+import "@fontsource-variable/manrope";
+import "@fontsource-variable/jetbrains-mono";
+import "@fontsource/playfair-display/500.css";
+import "@fontsource/playfair-display/600.css";
+import "@fontsource/playfair-display/700.css";
 import "@/styles.css";
 
 import {
@@ -20,12 +22,15 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
 import { PlayPage } from "@/features/play/PlayPage";
+import { ProgressionProvider } from "@/features/progression/ProgressionProvider";
 import { SettingsProvider } from "@/features/settings/SettingsProvider";
 
 const rootRoute = createRootRoute({
   component: () => (
     <SettingsProvider loadImmediately>
-      <Outlet />
+      <ProgressionProvider>
+        <Outlet />
+      </ProgressionProvider>
     </SettingsProvider>
   ),
 });

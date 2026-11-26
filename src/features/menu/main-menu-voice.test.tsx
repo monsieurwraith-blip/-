@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { PlayPage } from "@/features/play/PlayPage";
+import { ProgressionProvider } from "@/features/progression/ProgressionProvider";
 import { SettingsProvider } from "@/features/settings/SettingsProvider";
 import { VoiceSettingsPanel } from "@/features/settings/components/VoiceSettingsPanel";
 import { sortVoices } from "@/lib/sound/speech";
@@ -23,64 +24,92 @@ describe("ProChess Command Center & Navigation", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders ProChess Command Center with all 5 interactive action buttons", () => {
+  it("renders Russian ProChess Command Center with all club actions", () => {
     const onPlay = vi.fn();
     const onCoach = vi.fn();
     const onAnalysis = vi.fn();
+    const onPuzzles = vi.fn();
+    const onAcademy = vi.fn();
+    const onArchive = vi.fn();
+    const onProfile = vi.fn();
     const onCustomization = vi.fn();
     const onOpenSettings = vi.fn();
 
     render(
       <SettingsProvider>
-        <MainMenu
-          onPlay={onPlay}
-          onCoach={onCoach}
-          onAnalysis={onAnalysis}
-          onCustomization={onCustomization}
-          onOpenSettings={onOpenSettings}
-        />
+        <ProgressionProvider>
+          <MainMenu
+            onPlay={onPlay}
+            onCoach={onCoach}
+            onAnalysis={onAnalysis}
+            onPuzzles={onPuzzles}
+            onAcademy={onAcademy}
+            onArchive={onArchive}
+            onProfile={onProfile}
+            onCustomization={onCustomization}
+            onOpenSettings={onOpenSettings}
+          />
+        </ProgressionProvider>
       </SettingsProvider>,
     );
 
-    expect(screen.getByText("GRANDMASTER ANALYTICS SUITE")).toBeTruthy();
+    expect(screen.getByText("АНАЛИТИЧЕСКИЙ ШАХМАТНЫЙ КЛУБ")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: /^PLAY/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Начать игру/i }));
     expect(onPlay).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole("button", { name: /^COACH/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Играть с тренером/i }));
     expect(onCoach).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole("button", { name: /^ANALYSIS/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Анализ/i }));
     expect(onAnalysis).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole("button", { name: /^CUSTOMIZATION/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Тактические задачи/i }));
+    expect(onPuzzles).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Академия/i }));
+    expect(onAcademy).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: /^История партий/i }));
+    expect(onArchive).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Моя статистика/i }));
+    expect(onProfile).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Кастомизация/i }));
     expect(onCustomization).toHaveBeenCalledTimes(1);
 
-    fireEvent.click(screen.getByRole("button", { name: /^SETTINGS/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Настройки Звук, голос/i }));
     expect(onOpenSettings).toHaveBeenCalledTimes(1);
   });
 
-  it("navigates between Command Center, Arena, Analysis Lab, Customization, and Settings", () => {
+  it("navigates between Command Center, Arena, Analysis Lab, Academy, Puzzles, Archive, and Profile", () => {
     render(
       <SettingsProvider>
-        <PlayPage />
+        <ProgressionProvider>
+          <PlayPage />
+        </ProgressionProvider>
       </SettingsProvider>,
     );
 
-    expect(screen.getByText("GRANDMASTER ANALYTICS SUITE")).toBeTruthy();
+    expect(screen.getByText("АНАЛИТИЧЕСКИЙ ШАХМАТНЫЙ КЛУБ")).toBeTruthy();
 
-    // CUSTOMIZATION opens Settings directly on the Themes & Board tab.
-    fireEvent.click(screen.getByRole("button", { name: /^CUSTOMIZATION/i }));
-    expect(screen.getByText("Цветовая схема интерфейса")).toBeTruthy();
+    // Кастомизация opens Settings directly on Gold Mirror & Pieces tab.
+    fireEvent.click(screen.getByRole("button", { name: /^Кастомизация/i }));
+    expect(screen.getByText(/GOLD MIRROR EDITION/i)).toBeTruthy();
     fireEvent.keyDown(document, { key: "Escape" });
 
-    // ANALYSIS opens dedicated Analysis Lab.
-    fireEvent.click(screen.getByRole("button", { name: /^ANALYSIS/i }));
+    // Анализ opens dedicated Analysis Lab.
+    fireEvent.click(screen.getByRole("button", { name: /^Анализ/i }));
     expect(screen.getByText("Лаборатория анализа")).toBeTruthy();
 
-    // Return to Command Center, then launch COACH mode.
-    fireEvent.click(screen.getByRole("button", { name: /главное меню/i }));
-    fireEvent.click(screen.getByRole("button", { name: /^COACH/i }));
+    // Академия via AppHeader
+    fireEvent.click(screen.getByRole("button", { name: /Академия/i }));
+    expect(screen.getByText("Академия PROCHESS")).toBeTruthy();
+
+    // Return to Command Center, then launch Играть с тренером.
+    fireEvent.click(screen.getByRole("button", { name: /Главное меню/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^Играть с тренером/i }));
     expect(screen.getByText("Игра с тренером")).toBeTruthy();
   });
 });

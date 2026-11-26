@@ -1,4 +1,4 @@
-import { Gauge, Play, RotateCcw, Square, Volume1, Volume2, VolumeX } from "lucide-react";
+import { Check, Gauge, Play, RotateCcw, Square, Volume1, Volume2, VolumeX } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,13 @@ import {
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
-import { VOICE_MODES, type VoiceMode } from "@/lib/settings/settings";
+import { getCoachPortrait } from "@/features/coach/coachMood";
+import {
+  COACH_PERSONAS,
+  VOICE_MODES,
+  type CoachPersonaId,
+  type VoiceMode,
+} from "@/lib/settings/settings";
 import {
   DEFAULT_VOICE_DISPLAY,
   getLastSpokenPhrase,
@@ -75,6 +81,46 @@ export function VoiceSettingsPanel() {
 
   return (
     <div className="space-y-6">
+      <section>
+        <SectionTitle hint="Выберите 3D-образ и манеру наставника в панели AI Coach.">
+          Персонаж тренера
+        </SectionTitle>
+        <div
+          role="radiogroup"
+          aria-label="Персонаж тренера"
+          className="grid grid-cols-1 gap-2 sm:grid-cols-2"
+        >
+          {COACH_PERSONAS.map((persona) => {
+            const selected = settings.coachPersona === persona.id;
+            return (
+              <button
+                key={persona.id}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                data-selected={selected}
+                onClick={() => update({ coachPersona: persona.id as CoachPersonaId })}
+                className="choice-card flex-row items-center gap-3 p-2.5"
+              >
+                <img
+                  src={getCoachPortrait(persona.id)}
+                  alt={persona.name}
+                  className="size-12 shrink-0 rounded-xl border border-border object-cover object-top"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium">{persona.name}</span>
+                  <span className="block truncate text-xs text-primary">{persona.role}</span>
+                  <span className="block truncate text-[11px] text-muted-foreground">
+                    {persona.subtitle}
+                  </span>
+                </span>
+                {selected && <Check className="size-4 shrink-0 text-primary" aria-hidden />}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
       <section className="panel p-4">
         <SettingRow
           id="voice-enabled"
@@ -82,7 +128,7 @@ export function VoiceSettingsPanel() {
           description="Автоматически озвучивает ошибки, тактические угрозы, подсказки и хорошие ходы на русском языке без наложения фраз."
         >
           <span className="w-8 text-right font-mono text-xs text-muted-foreground" aria-hidden>
-            {voice.enabled ? "ON" : "OFF"}
+            {voice.enabled ? "ВКЛ" : "ВЫКЛ"}
           </span>
           <Switch
             id="voice-enabled"

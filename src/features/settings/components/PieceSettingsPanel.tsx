@@ -1,10 +1,15 @@
-import { Check } from "lucide-react";
+import { Check, Crown } from "lucide-react";
 import { useState, type CSSProperties } from "react";
 
 import { PieceImage } from "@/components/chess/PieceImage";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { PIECE_SETS, resolveBoardColors, type PieceSetId } from "@/lib/appearance/themes";
+import {
+  PIECE_SETS,
+  resolveBoardColors,
+  type PieceSet,
+  type PieceSetId,
+} from "@/lib/appearance/themes";
 import type { Color, PieceSymbol } from "@/lib/chess/types";
 import { cn } from "@/lib/utils";
 
@@ -21,6 +26,15 @@ const PREVIEW: { color: Color; type: PieceSymbol }[] = [
 ];
 
 type PieceTarget = "both" | "w" | "b";
+type PieceCategory = "all" | PieceSet["category"];
+
+const CATEGORY_TABS: { id: PieceCategory; label: string }[] = [
+  { id: "all", label: `Все (${PIECE_SETS.length})` },
+  { id: "gold", label: "GOLD MIRROR" },
+  { id: "classic", label: "Классика и камень" },
+  { id: "metal", label: "Премиум-металл" },
+  { id: "special", label: "Стекло и неон" },
+];
 
 export function PieceSettingsPanel() {
   const { settings, update } = useSettings();
@@ -30,6 +44,7 @@ export function PieceSettingsPanel() {
   const hasSplit = settings.whitePieceSet !== null || settings.blackPieceSet !== null;
   const [splitEnabled, setSplitEnabled] = useState(hasSplit);
   const [targetColor, setTargetColor] = useState<PieceTarget>(hasSplit ? "w" : "both");
+  const [category, setCategory] = useState<PieceCategory>("all");
 
   const activeSetId: PieceSetId =
     splitEnabled && targetColor === "w"
@@ -48,11 +63,46 @@ export function PieceSettingsPanel() {
     }
   };
 
+  const visibleSets =
+    category === "all" ? PIECE_SETS : PIECE_SETS.filter((s) => s.category === category);
+
   return (
     <div className="space-y-4">
-      <SectionTitle hint="16 коллекций фигур · поддерживается раздельный выбор для белых и чёрных.">
-        Темы фигур
+      <SectionTitle hint="26 коллекций, включая флагманскую линейку GOLD MIRROR с металлическим 3D-блеском и раздельным выбором сторон.">
+        Темы фигур и GOLD MIRROR
       </SectionTitle>
+
+      {/* Flagship GOLD MIRROR Quick Showcase */}
+      <div className="rounded-xl border border-amber-400/35 bg-gradient-to-br from-amber-500/10 via-card to-secondary/70 p-3.5">
+        <div className="flex items-center justify-between gap-2">
+          <span className="flex items-center gap-1.5 font-sans text-xs font-semibold uppercase tracking-[0.14em] text-amber-300">
+            <Crown className="size-3.5" aria-hidden />
+            GOLD MIRROR EDITION
+          </span>
+          <span className="text-[11px] text-muted-foreground">5 зеркальных золотых покрытий</span>
+        </div>
+        <div className="mt-2.5 flex flex-wrap gap-1.5">
+          {PIECE_SETS.filter((s) => s.category === "gold").map((gold) => {
+            const active = activeSetId === gold.id;
+            return (
+              <button
+                key={gold.id}
+                type="button"
+                onClick={() => handleSelectSet(gold.id as PieceSetId)}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
+                  active
+                    ? "border-amber-300 bg-amber-400/20 text-amber-100"
+                    : "border-amber-400/25 bg-black/30 text-amber-100/80 hover:border-amber-300/60",
+                )}
+              >
+                <PieceImage color="w" type="q" set={gold.id as PieceSetId} className="size-5" />
+                <span>{gold.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       <div className="panel space-y-3 p-3.5">
         <div className="flex items-center justify-between gap-3">
@@ -61,7 +111,7 @@ export function PieceSettingsPanel() {
               Раздельные фигуры для белых и чёрных
             </Label>
             <p className="text-xs text-muted-foreground">
-              Комбинируйте разные материалы, например Gold против Titanium
+              Комбинируйте разные материалы, например CHAMPAGNE GOLD против BLACK GOLD
             </p>
           </div>
           <Switch
@@ -125,12 +175,33 @@ export function PieceSettingsPanel() {
         )}
       </div>
 
+      {/* Category Filter Tabs */}
+      <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Категории фигур">
+        {CATEGORY_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            aria-selected={category === tab.id}
+            onClick={() => setCategory(tab.id)}
+            className={cn(
+              "rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+              category === tab.id
+                ? "border-primary/70 bg-primary/15 text-primary"
+                : "border-border bg-secondary/60 text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       <div
         className="grid grid-cols-1 gap-3 sm:grid-cols-2"
         role="radiogroup"
         aria-label="Тема фигур"
       >
-        {PIECE_SETS.map((set) => {
+        {visibleSets.map((set) => {
           const selected = activeSetId === set.id;
           return (
             <button

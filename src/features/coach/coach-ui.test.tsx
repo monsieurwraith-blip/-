@@ -110,7 +110,7 @@ describe("Think time, Layered Hints & Coach UI", () => {
     expect(screen.getByText("Nf3")).toBeInTheDocument();
   });
 
-  it("CoachPanel shows interactive mistake buttons and fires callbacks", () => {
+  it("CoachPanel renders mute button next to AI Coach, 4 advisor actions, and mistake controls", () => {
     const rec = makeBlunderRecord();
     const onFix = vi.fn();
     const onContinue = vi.fn();
@@ -125,6 +125,8 @@ describe("Think time, Layered Hints & Coach UI", () => {
           error={null}
           outcome={null}
           playerColor="w"
+          fen={AFTER_E4_E5}
+          turn="w"
           idea={idleIdea}
           onFixMove={onFix}
           onContinue={onContinue}
@@ -135,6 +137,19 @@ describe("Think time, Layered Hints & Coach UI", () => {
         />
       </SettingsProvider>,
     );
+
+    // Mute button directly beside AI Coach header label
+    const muteBtn = screen.getByRole("button", { name: /Выключить звук тренера/i });
+    expect(muteBtn).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(muteBtn);
+    expect(screen.getByRole("button", { name: /Включить звук тренера/i })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    // 4 Advisor buttons respond meaningfully
+    fireEvent.click(screen.getByRole("button", { name: /Объясни эту позицию/i }));
+    expect(screen.getByText("Разбор текущей позиции")).toBeInTheDocument();
 
     expect(screen.getByText(/Слон на a6/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Исправить ход/i }));
